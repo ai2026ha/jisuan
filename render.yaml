@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: agent-calculator
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agent-calculator-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+
+databases:
+  - name: agent-calculator-db
+    plan: free
+    region: singapore
+    databaseName: agent_calculator
