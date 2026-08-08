@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>代理计算中心</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#718096;--line:#e6ebf2;--primary:#315efb;--primary2:#2447c7;--green:#129c70;--red:#d64545;--shadow:0 8px 30px rgba(26,39,70,.07)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,"Microsoft YaHei",Arial,sans-serif}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:10}.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px}.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#315efb,#7b61ff);color:#fff;display:grid;place-items:center;font-weight:900}.user{display:flex;align-items:center;gap:12px;color:#667085}.wrap{display:flex;max-width:1500px;margin:auto;min-height:calc(100vh - 68px)}.side{width:220px;padding:24px 12px}.nav{display:flex;flex-direction:column;gap:5px}.nav button{border:0;background:transparent;text-align:left;padding:12px 14px;border-radius:10px;color:#667085;font-size:14px;cursor:pointer}.nav button.active,.nav button:hover{background:#edf2ff;color:var(--primary);font-weight:700}.main{flex:1;padding:25px 20px 50px}.page{display:none}.page.active{display:block}.title{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}.title h1{font-size:25px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:6px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:18px}.stat,.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}.stat{padding:18px}.stat .label{font-size:13px;color:var(--muted)}.stat .num{font-size:25px;font-weight:800;margin-top:7px}.card{padding:20px}.calcgrid{display:grid;grid-template-columns:1fr 1.25fr;gap:18px}.row{display:flex;gap:12px;flex-wrap:wrap}.field{flex:1;min-width:150px}label{display:block;font-size:12px;color:#667085;margin-bottom:7px}input,select,button{font:inherit}input,select{width:100%;padding:11px 12px;border:1px solid #d8dfeb;border-radius:10px;background:#fff;outline:none}input:focus,select:focus{border-color:#7b8ff8;box-shadow:0 0 0 3px #315efb14}button{border:1px solid #d7deea;background:#fff;color:#344054;padding:10px 14px;border-radius:10px;cursor:pointer}.primary{background:var(--primary);border-color:var(--primary);color:#fff}.primary:hover{background:var(--primary2)}.danger{background:#fff3f3;color:#b42318;border-color:#ffd5d5}.wide{grid-column:1/-1}.formulaHint{margin-top:13px;padding:11px 12px;background:#f7f9fc;border-radius:10px;color:#667085;font-size:13px}.resultbox{margin-top:15px;padding:15px;background:#eefbf6;border:1px solid #ccefe2;border-radius:12px}.resultbox .big{font-size:24px;font-weight:800;color:var(--green)}.agent-card{padding:0;overflow:hidden;margin-bottom:14px}.agent-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:#fbfcfe;border-bottom:1px solid var(--line)}.agent-name{font-weight:800}.total{font-size:20px;font-weight:850}.entries{padding:5px 18px 14px}.entry{display:grid;grid-template-columns:1fr auto;gap:12px;padding:12px 0;border-bottom:1px dashed #e7ebf2}.entry:last-child{border-bottom:0}.entry-title{font-weight:700}.expr{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#667085;font-size:12px;margin-top:4px}.entry-result{font-weight:800;color:#16845f;align-self:center}.empty{padding:18px;color:#98a2b3;text-align:center}.toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{padding:11px 9px;border-bottom:1px solid #edf0f4;text-align:left;font-size:13px;white-space:nowrap}th{color:#667085;background:#fafbfc}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#315efb;font-size:12px;font-weight:700}.notice{padding:11px 13px;border-radius:10px;background:#f5f8ff;color:#3851a8;font-size:13px;margin:12px 0}.check{width:auto!important}.checkline{display:flex;align-items:center;gap:8px;font-size:13px}.gridform{display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.formulaChoice{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:7px}.formulaChoice label{border:1px solid #dbe1ec;border-radius:10px;padding:11px;color:#344054;cursor:pointer;margin:0}.formulaChoice input{width:auto}.dangerText{color:#b42318}.logout{padding:7px 10px}
+@media(max-width:1050px){.side{width:175px}.calcgrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.gridform{grid-template-columns:1fr}}@media(max-width:700px){.top{padding:0 14px}.wrap{display:block}.side{width:auto;padding:10px 12px}.nav{flex-direction:row;overflow:auto}.nav button{white-space:nowrap}.main{padding:15px}.formulaChoice{grid-template-columns:1fr}.entry{grid-template-columns:1fr}.user span{display:none}}
+
+.agent-record{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid #e8e8e8;border-radius:10px;margin:8px 0;background:#fff}
+.record-main{flex:1;min-width:0}.record-game{font-weight:700}.record-expression{font-size:13px;color:#777;margin-top:4px}
+.record-result{font-weight:800;min-width:70px;text-align:right}.agent-card-head{display:flex;justify-content:space-between;align-items:center}
+.agent-card-head strong{font-size:28px}.agent-card-head span{display:block;color:#777;font-size:12px}
+</style></head>
+<body>
+<header class="top"><div class="brand"><div class="logo">算</div>代理计算中心</div><div class="user"><span>已登录</span><form method="post" action="/logout"><button class="logout">退出</button></form></div></header>
+<div class="wrap">
+<aside class="side"><nav class="nav">
+<button class="active" onclick="tab('dashboard',this)">⌂ 控制台</button>
+<button onclick="tab('calc',this)">＋ 开始计算</button>
+<button onclick="tab('agents',this)">♙ 代理管理</button>
+<button onclick="tab('games',this)">◈ 游戏管理</button>
+<button onclick="tab('rates',this)">⇄ 汇率管理</button>
+<button onclick="tab('history',this)">▤ 历史记录</button>
+</nav></aside>
+<main class="main">
+<section id="dashboard" class="page active">
+<div class="title"><div><h1>今日概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button></div>
+<div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">今日计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0.0000</div></div></div>
+<div id="dashboardAgents"></div>
+</section>
+
+<section id="calc" class="page">
+<div class="title"><div><h1>新建计算</h1><div class="subtitle">选择游戏后自动使用该游戏绑定的固定公式</div></div></div>
+<div class="calcgrid"><div class="card">
+<div class="row"><div class="field"><label>选择代理</label><select id="agent"></select></div><div class="field"><label>选择游戏</label><select id="game"></select></div></div>
+<div class="row" style="margin-top:14px"><div class="field"><label>自定义数字</label><input id="inputNumber" type="number" step="1" min="1" placeholder="例如 1000"></div><div class="field"><label>选择汇率</label><select id="rate"></select></div></div>
+<div id="formulaHint" class="formulaHint"></div>
+<button class="primary" style="width:100%;margin-top:16px;padding:12px" onclick="calculate()">立即计算</button>
+<div id="calcMsg"></div><div id="result"></div>
+</div><div class="card"><h3 style="margin-top:0">当前代理账单</h3><div id="selectedAgentBill"></div></div></div>
+</section>
+
+<section id="agents" class="page"><div class="title"><div><h1>代理管理</h1><div class="subtitle">代理独立累计，清零不删除历史记录</div></div></div>
+<div class="card"><div class="row"><div class="field"><label>新增代理</label><input id="newAgent" placeholder="代理名称"></div><button class="primary" onclick="addAgent()">新增代理</button><button onclick="selectEligible()">全选（仅≥50）</button><button class="danger" onclick="clearAgents()">清零选中</button></div><div class="notice">自动全选时，总额低于 50 的代理不会被勾选。</div><div id="agentTable"></div></div></section>
+
+<section id="games" class="page"><div class="title"><div><h1>游戏管理</h1><div class="subtitle">新增游戏时绑定一个固定公式，添加后不提供修改</div></div></div>
+<div class="card"><div class="gridform"><div><label>游戏名称</label><input id="newGame" placeholder="例如 游戏A"></div><div><label>绑定固定公式</label><div class="formulaChoice">
+<label><input type="radio" name="fc" value="1" checked> 公式①</label><label><input type="radio" name="fc" value="2"> 公式②</label><label><input type="radio" name="fc" value="3"> 公式③</label></div></div></div><div class="notice">固定规则：① 数字×0.94×0.50　② 数字×0.94×0.55　③ 数字×0.94×0.45。计算时再除以所选汇率。</div><button class="primary" onclick="addGame()">添加游戏</button><div id="gameTable"></div></div></section>
+
+<section id="rates" class="page"><div class="title"><div><h1>汇率管理</h1><div class="subtitle">计算时固定采用除以汇率</div></div></div>
+<div class="card"><div class="row"><div class="field"><label>汇率名称</label><input id="newRateName" placeholder="例如 人民币汇率"></div><div class="field"><label>汇率数值</label><input id="newRateValue" type="number" step="1" min="1" placeholder="例如 7"></div><button class="primary" onclick="addRate()">新增汇率</button></div><div id="rateTable"></div></div></section>
+
+<section id="history" class="page"><div class="title"><div><h1>历史计算</h1><div class="subtitle">每笔记录保留代理、游戏、实际计算式和结果</div></div></div>
+<div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div id="historyTable"></div></div></section>
+</main></div>
+<script>
+let data={agents:[],games:[],rates:[]},historyRows=[];
+const $=id=>document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok)throw Error(d.detail||'操作失败');return d}
+function tab(id,btn){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
+function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0.55','数字 × 0.94 × 0.45'][n]}
+function gameById(){return data.games.find(g=>g.id==+$('game').value)}
+function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`该游戏已绑定固定计算规则：${formulaText(g.formula_choice)} ÷ 汇率`:'请先选择游戏'}
+function renderAll(){
+ $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${a.total.toFixed(4)}）</option>`).join('');
+ $('game').innerHTML=data.games.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
+ $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${Math.trunc(Number(r.value))}）</option>`).join('');
+ $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+ renderAgentTable();renderGameTable();renderRateTable();renderDashboard();renderSelectedAgent();updateFormulaHint()
+}
+function agentBill(agentId){return historyRows.filter(x=>x.agent_id==agentId)}
+function renderDashboard(){
+ $('statAgents').textContent=data.agents.length;
+ $('statTotal').textContent=data.agents.reduce((s,a)=>s+a.total,0).toFixed(4);
+ api('/api/history').then(rows=>{historyRows=rows; $('statCalcs').textContent=rows.length; renderDashboardAgents();renderSelectedAgent()})
+}
+function renderDashboardAgents(){
+ $('dashboardAgents').innerHTML=data.agents.map(a=>{let rows=agentBill(a.id);return `<div class="card agent-card"><div class="agent-head"><div><div class="agent-name">${esc(a.name)}</div><div class="subtitle">${rows.length} 笔计算记录</div></div><div class="total">${a.total.toFixed(4)}</div></div><div class="entries">${rows.length?rows.slice(0,8).map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}${rows.length>8?'<div class="empty">仅显示最近8笔，历史页面可查看全部</div>':''}</div></div>`}).join('')||'<div class="card empty">暂无代理</div>'
+}
+function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(x.expression)}</div></div><div class="entry-result">+${x.result}</div></div>`}
+function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${a.total.toFixed(4)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
+async function calculate(){try{let fd=new FormData();fd.append('agent_id',$('agent').value);fd.append('game_id',$('game').value);fd.append('rate_id',$('rate').value);fd.append('formula_no','1');fd.append('input_number',$('inputNumber').value);let d=await api('/api/calculate',{method:'POST',body:fd});$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;$('calcMsg').innerHTML='';await load()}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
+async function load(){data=await api('/api/bootstrap');renderAll()}
+$('game').onchange=updateFormulaHint;$('agent').onchange=renderSelectedAgent;
+async function addAgent(){let fd=new FormData();fd.append('name',$('newAgent').value);try{await api('/api/agents',{method:'POST',body:fd});$('newAgent').value='';await load()}catch(e){alert(e.message)}}
+async function delAgent(id){if(!confirm('确定删除该代理？'))return;try{await api('/api/agents/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
+function selectEligible(){document.querySelectorAll('.agentCheck').forEach(c=>c.checked=+c.dataset.total>=50)}
+async function clearAgents(){let ids=[...document.querySelectorAll('.agentCheck:checked')].map(x=>x.value);if(!ids.length)return alert('请先选择代理');if(!confirm('确定清零选中代理？历史记录不会删除。'))return;let fd=new FormData();ids.forEach(id=>fd.append('agent_ids',id));try{await api('/api/agents/clear',{method:'POST',body:fd});await load()}catch(e){alert(e.message)}}
+function renderAgentTable(){$('agentTable').innerHTML='<table><thead><tr><th>选择</th><th>代理</th><th>累计总额</th><th>操作</th></tr></thead><tbody>'+data.agents.map(a=>`<tr><td><input class="check agentCheck" type="checkbox" value="${a.id}" data-total="${a.total}"></td><td><b>${esc(a.name)}</b></td><td><b>${a.total.toFixed(4)}</b></td><td><button class="danger" onclick="delAgent(${a.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
+async function addGame(){let fd=new FormData();fd.append('name',$('newGame').value);fd.append('formula_choice',document.querySelector('input[name="fc"]:checked').value);try{await api('/api/games',{method:'POST',body:fd});$('newGame').value='';await load()}catch(e){alert(e.message)}}
+async function delGame(id){if(!confirm('确定删除？已有历史记录的游戏不能删除。'))return;try{await api('/api/games/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
+function renderGameTable(){$('gameTable').innerHTML='<table><thead><tr><th>游戏名</th><th>绑定规则</th><th>操作</th></tr></thead><tbody>'+data.games.map(g=>`<tr><td><b>${esc(g.name)}</b></td><td><span class="badge">固定公式${g.formula_choice}</span></td><td><button class="danger" onclick="delGame(${g.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
+async function addRate(){let fd=new FormData();fd.append('name',$('newRateName').value);fd.append('value',$('newRateValue').value);try{await api('/api/rates',{method:'POST',body:fd});$('newRateName').value='';$('newRateValue').value='';await load()}catch(e){alert(e.message)}}
+async function delRate(id){if(!confirm('确定删除？已有历史记录的汇率不能删除。'))return;try{await api('/api/rates/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
+function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${Math.trunc(Number(r.value))}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
+async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
+async function loadHistory(){try{let qs=[];if($('historyDay').value)qs.push('day='+$('historyDay').value);let rows=await api('/api/history'+(qs.length?'?'+qs.join('&'):''));historyRows=rows;let aid=$('historyAgent').value;if(aid)rows=rows.filter(x=>x.agent_id==aid);$('historyTable').innerHTML='<table><thead><tr><th>时间</th><th>代理</th><th>游戏</th><th>计算式</th><th>结果</th><th>用户</th><th>操作</th></tr></thead><tbody>'+rows.map(x=>`<tr><td>${x.time}</td><td>${esc(x.agent)}</td><td>${esc(x.game)}</td><td>${esc(x.expression)}</td><td><b>${x.result}</b></td><td>${esc(x.user)}</td><td><button class="danger" onclick="deleteCalculation(${x.id})">删除</button></td></tr>`).join('')+'</tbody></table>'+(rows.length?'':'<p class="empty">暂无记录</p>')}catch(e){alert(e.message)}}
+load();
+</script></body></html>

@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录</title>
+<style>
+body{margin:0;background:#f3f6fb;font-family:Arial,"Microsoft YaHei",sans-serif;display:grid;place-items:center;height:100vh}
+.card{width:360px;background:#fff;padding:34px;border-radius:16px;box-shadow:0 10px 35px #0001}h1{margin:0 0 24px}input,button{width:100%;box-sizing:border-box;padding:12px;margin:7px 0;border:1px solid #d8dee9;border-radius:9px;font-size:15px}button{background:#2563eb;color:white;border:0;cursor:pointer}.err{color:#dc2626;margin-bottom:8px}
+</style></head><body><div class="card"><h1>代理计算系统</h1>{% if error %}<div class="err">{{error}}</div>{% endif %}
+<form method="post" action="/login"><input name="username" placeholder="用户名" required><input name="password" type="password" placeholder="密码" required><button>登录</button></form>
+<p style="color:#667085;font-size:13px">Demo 默认：admin / admin123</p></div></body></html>
