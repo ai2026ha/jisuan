@@ -6,6 +6,14 @@ from urllib.parse import quote
 import os
 from typing import Optional
 
+
+def beijing_time(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Asia/Shanghai"))
+
 from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
