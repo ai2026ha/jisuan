@@ -62,7 +62,10 @@ const $=id=>document.getElementById(id);
 function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); return String(n);} 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok)throw Error(d.detail||'操作失败');return d}
-function tab(id,btn){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
+let currentView='dashboard';
+function tab(id,btn){
+ currentView=id;
+document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
 function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0.55','数字 × 0.94 × 0.45'][n]}
 function gameById(){return data.games.find(g=>g.id==+$('game').value)}
 function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`该游戏已绑定固定计算规则：${formulaText(g.formula_choice)} ÷ 汇率`:'请先选择游戏'}
@@ -116,7 +119,7 @@ function fmtExpression(v){
 function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)}</div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 async function calculate(){try{const keepAgent=$('agent').value;let fd=new FormData();fd.append('agent_id',keepAgent);fd.append('game_id',$('game').value);fd.append('rate_id',$('rate').value);fd.append('formula_no','1');fd.append('input_number',$('inputNumber').value);let d=await api('/api/calculate',{method:'POST',body:fd});$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;$('calcMsg').innerHTML='';await load();$('agent').value=keepAgent;renderSelectedAgent()}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
-async function load(){const currentPage=document.querySelector('.page.active')?.id||'dashboard';data=await api('/api/bootstrap');renderAll();const btn=[...document.querySelectorAll('.nav button')].find(b=>b.getAttribute('onclick')?.includes("'"+currentPage+"'"));tab(currentPage,btn)}
+async function load(){const currentPage=currentView||document.querySelector('.page.active')?.id||'dashboard';data=await api('/api/bootstrap');renderAll();const btn=[...document.querySelectorAll('.nav button')].find(b=>b.getAttribute('onclick')?.includes("'"+currentPage+"'"));tab(currentPage,btn)}
 $('game').onchange=updateFormulaHint;$('agent').onchange=renderSelectedAgent;
 async function addAgent(){let fd=new FormData();fd.append('name',$('newAgent').value);try{await api('/api/agents',{method:'POST',body:fd});$('newAgent').value='';await load()}catch(e){alert(e.message)}}
 async function delAgent(id){if(!confirm('确定删除该代理？'))return;try{await api('/api/agents/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
