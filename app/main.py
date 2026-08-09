@@ -287,7 +287,14 @@ async def add_agent(request: Request, name: str = Form(...), db: Session = Depen
     require_user(request, db)
     name = name.strip()
     if not name: raise HTTPException(400, "代理名不能为空")
-    if db.scalar(select(Agent).where(Agent.name == name)): raise HTTPException(400, "代理已存在")
+    if db.scalar(select(Agent).where(Agent.name == name, Agent.is_deleted == False)):
+        raise HTTPException(400, "代理已存在")
+    old_agent = db.scalar(select(Agent).where(Agent.name == name, Agent.is_deleted == True))
+    if old_agent:
+        old_agent.is_deleted = False
+        db.commit()
+        await ws_manager.broadcast("agent_updated")
+        return {"ok": True}
     db.add(Agent(name=name)); db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
@@ -356,7 +363,15 @@ async def add_game(request: Request, name: str = Form(...), formula_choice: int 
              db: Session = Depends(db_dep)):
     require_user(request, db)
     name = name.strip()
-    if db.scalar(select(Game).where(Game.name == name)): raise HTTPException(400, "游戏已存在")
+    if db.scalar(select(Game).where(Game.name == name, Game.is_deleted == False)):
+        raise HTTPException(400, "游戏已存在")
+    old_game = db.scalar(select(Game).where(Game.name == name, Game.is_deleted == True))
+    if old_game:
+        old_game.is_deleted = False
+        old_game.formula_choice = formula_choice
+        db.commit()
+        await ws_manager.broadcast("game_updated")
+        return {"ok": True}
     if formula_choice not in (1, 2, 3):
         raise HTTPException(400, "公式选择无效")
     g = Game(name=name, factor=Decimal("0.94"), formula1=Decimal("0.50"),
@@ -380,7 +395,13 @@ async def add_rate(request: Request, name: str = Form(...), value: str = Form(..
     require_user(request, db)
     try: v = Decimal(value)
     except Exception: raise HTTPException(400, "汇率必须是数字")
-    db.add(Rate(name=name.strip(), value=v)); db.commit()
+    old_rate = db.scalar(select(Rate).where(Rate.name == name.strip(), Rate.is_deleted == True))
+    if old_rate:
+        old_rate.is_deleted = False
+        old_rate.value = v
+    else:
+        db.add(Rate(name=name.strip(), value=v))
+    db.commit()
     await ws_manager.broadcast("rate_updated")
     return {"ok": True}
 
