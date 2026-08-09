@@ -223,7 +223,7 @@ async function delRate(id){if(!confirm('确定删除？已有历史记录的汇�
 function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${fmtNum(r.value)}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
 async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
 
-async function clearHistory(){
+async async function clearHistory(){
     if(!confirm("确定清除全部历史记录？")) return;
     await api("/api/history/clear",{method:"DELETE"});
     allHistoryRows=[];
