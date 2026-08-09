@@ -166,7 +166,7 @@ function fmtExpression(v){
  if(!v) return v;
  return String(v).replace(/\d+(?:\.\d+)?/g,function(x){return fmtNum(x);});
 }
-function deleteHistory(id){ if(!confirm("确定删除该计算记录？")) return; api('/api/history/'+id,{method:'DELETE'}).then(()=>load()); }
+function deleteHistory(id){ if(!confirm("确定删除该计算记录？")) return; api('/api/history/delete/'+id,{method:'DELETE'}).then(()=>load()); }
 function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)} <button type="button" onclick="event.stopPropagation();deleteHistory(${x.id})">删除</button></div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 function saveSelectState(){
@@ -222,7 +222,7 @@ function renderGameTable(){$('gameTable').innerHTML='<table><thead><tr><th>游�
 async function addRate(){let fd=new FormData();fd.append('name',$('newRateName').value);fd.append('value',$('newRateValue').value);try{await api('/api/rates',{method:'POST',body:fd});$('newRateName').value='';$('newRateValue').value='';await load()}catch(e){alert(e.message)}}
 async function delRate(id){if(!confirm('确定删除？已有历史记录的汇率不能删除。'))return;try{await api('/api/rates/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
 function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${fmtNum(r.value)}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
-async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
+async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/delete/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
 
 async function clearHistory(){
     if(!confirm("确定清除全部历史记录？")) return;
