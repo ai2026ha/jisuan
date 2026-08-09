@@ -278,8 +278,8 @@ def bootstrap(request: Request, db: Session = Depends(db_dep)):
         "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).where(Agent.is_deleted == False).order_by(Agent.id.asc())).all()],
         "games": [{"id": g.id, "name": g.name, "formula_choice": g.formula_choice,
                    "factor": float(g.factor), "f1": float(g.formula1), "f2": float(g.formula2), "f3": float(g.formula3)}
-                  for g in db.scalars(select(Game).order_by(Game.name)).all()],
-        "rates": [{"id": r.id, "name": r.name, "value": float(r.value)} for r in db.scalars(select(Rate).order_by(Rate.name)).all()],
+                  for g in db.scalars(select(Game).where(Game.is_deleted == False).order_by(Game.name)).all()],
+        "rates": [{"id": r.id, "name": r.name, "value": float(r.value)} for r in db.scalars(select(Rate).where(Rate.is_deleted == False).order_by(Rate.name)).all()],
     }
 
 @app.post("/api/agents")
@@ -464,7 +464,7 @@ def export_txt(request: Request, db: Session = Depends(db_dep)):
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
-    agents = db.scalars(select(Agent).where(Agent.total >= Decimal("50")).order_by(Agent.name)).all()
+    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.name)).all()
     lines = []
     for a in agents:
         has_today = db.scalar(select(func.count(Calculation.id)).where(
