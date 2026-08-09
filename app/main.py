@@ -506,6 +506,7 @@ async def delete_calculation(calc_id: int, request: Request, db: Session = Depen
         agent.total = Decimal(agent.total or 0) - Decimal(c.result or 0)
     db.delete(c)
     db.commit()
+    await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "total": float(agent.total) if agent else 0}
 
 @app.get("/api/history")

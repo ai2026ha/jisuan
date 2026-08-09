@@ -243,14 +243,41 @@ load();
 </script>
 <script>
 (function(){
-  try {
-    const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(wsProtocol + '://' + location.host + '/ws');
-    ws.onmessage = function(){
-      load();
-    };
-    window.__syncSocket = ws;
-  } catch(e) {}
+  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  let retryTimer = null;
+  let hasConnected = false;
+
+  function connectRealtimeSync(){
+    try {
+      const ws = new WebSocket(wsProtocol + '://' + location.host + '/ws');
+      window.__syncSocket = ws;
+
+      ws.onopen = function(){
+        // 重连成功后补拉一次最新数据，避免断线期间遗漏其他设备的操作。
+        if(hasConnected) load();
+        hasConnected = true;
+      };
+
+      ws.onmessage = function(){
+        // load() 会保留当前页面；若当前在历史页，tab('history') 会同步执行 loadHistory()。
+        load();
+      };
+
+      ws.onclose = function(){
+        if(retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(connectRealtimeSync, 2000);
+      };
+
+      ws.onerror = function(){
+        try { ws.close(); } catch(e) {}
+      };
+    } catch(e) {
+      if(retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(connectRealtimeSync, 2000);
+    }
+  }
+
+  connectRealtimeSync();
 })();
 </script>
 </body></html>
