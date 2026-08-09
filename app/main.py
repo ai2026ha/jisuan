@@ -189,8 +189,30 @@ except Exception:
 def seed():
     db = SessionLocal()
     try:
-        if not db.scalar(select(User).where(User.username == "admin")):
-            db.add(User(username="admin", password_hash=pwd.hash("admin123"), role="admin"))
+        # 登录账号只更新现有管理员这一行，保留原 User.id。
+        # Calculation.user_id 等历史关联因此完全不变；代理/游戏/汇率/计算记录均不会被修改。
+        configured_username = os.getenv("ADMIN_USERNAME", "").strip()
+        configured_password = os.getenv("ADMIN_PASSWORD", "")
+
+        admin = db.scalar(select(User).where(User.role == "admin").order_by(User.id.asc()))
+        if admin:
+            if configured_username and configured_username != admin.username:
+                duplicate = db.scalar(
+                    select(User).where(User.username == configured_username, User.id != admin.id)
+                )
+                if duplicate:
+                    raise RuntimeError("ADMIN_USERNAME 已被其他账号使用")
+                admin.username = configured_username
+            if configured_password and not pwd.verify(configured_password, admin.password_hash):
+                admin.password_hash = pwd.hash(configured_password)
+        else:
+            # 仅全新数据库没有管理员时才创建默认管理员。
+            db.add(User(
+                username=configured_username or "admin",
+                password_hash=pwd.hash(configured_password or "admin123"),
+                role="admin",
+            ))
+
         if not db.scalar(select(Agent)):
             db.add_all([Agent(name="示例代理A", sort_order=1), Agent(name="示例代理B", sort_order=2)])
         if not db.scalar(select(Game)):
