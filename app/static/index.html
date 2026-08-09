@@ -226,7 +226,11 @@ async function deleteCalculation(id){if(!confirm('确定删除这条计算记录
 async function clearHistory(){
     if(!confirm("确定清除全部历史记录？")) return;
     await api("/api/history/clear",{method:"DELETE"});
+    allHistoryRows=[];
+    activeHistoryRows=[];
+    historyRows=[];
     await loadHistory();
+    await load();
 }
 async function loadHistory(){try{let qs=[];if($('historyDay').value)qs.push('day='+$('historyDay').value);let rows=await api('/api/history'+(qs.length?'?'+qs.join('&'):''));allHistoryRows=rows; let aid=$('historyAgent').value;if(aid)rows=rows.filter(x=>x.agent_id==aid);$('historyTable').innerHTML='<table><thead><tr><th>时间</th><th>代理</th><th>游戏</th><th>计算式</th><th>结果</th><th>用户</th><th>操作</th></tr></thead><tbody>'+rows.map(x=>`<tr><td>${x.time}</td><td>${esc(x.agent)}</td><td>${esc(x.game)}</td><td>${esc(fmtExpression(x.expression))}</td><td><b>${fmtNum(x.result)}</b></td><td>${esc(x.user)}</td><td><button class="danger" onclick="deleteCalculation(${x.id})">删除</button></td></tr>`).join('')+'</tbody></table>'+(rows.length?'':'<p class="empty">暂无记录</p>')}catch(e){alert(e.message)}}
 load();

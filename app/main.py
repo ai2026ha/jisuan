@@ -483,9 +483,9 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
 async def clear_history(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     # 仅清除历史记录，不修改代理金额、代理状态、游戏、汇率等数据
-    db.query(Calculation).delete(synchronize_session=False)
+    deleted = db.query(Calculation).delete(synchronize_session=False)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": deleted}
 
 @app.get("/api/export/txt")
 def export_txt(request: Request, db: Session = Depends(db_dep)):
@@ -493,7 +493,7 @@ def export_txt(request: Request, db: Session = Depends(db_dep)):
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
-    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.name)).all()
+    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.id.asc())).all()
     lines = []
     for a in agents:
         has_today = db.scalar(select(func.count(Calculation.id)).where(
