@@ -24,7 +24,7 @@
 </nav></aside>
 <main class="main">
 <section id="dashboard" class="page active">
-<div class="title"><div><h1>今日概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button></div>
+<div class="title"><div><h1>今日概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button><a class="primary" style="text-decoration:none;margin-left:10px" href="/api/export/txt">⇩ 导出TXT</a></div>
 <div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">今日计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0</div></div></div>
 <div id="dashboardAgents"></div>
 </section>
