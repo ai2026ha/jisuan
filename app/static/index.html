@@ -94,13 +94,16 @@ function renderDashboardAgents(){
    return `<div class="card agent-card">
      <div class="agent-head">
        <div>
-         <div class="agent-name">${esc(a.name)}</div>
+         <div class="agent-name">${esc(a.name)}${a.note?` <span class="agent-note">${esc(a.note)}</span>`:''}</div>
          <div class="subtitle">${rows.length} 笔计算记录</div>
        </div>
        <div class="total">${fmtNum(a.total)}</div>
      </div>
-     <div style="display:flex;gap:8px;align-items:center"><button class="record-toggle" onclick="toggleAgentRecords(this)">▼ 查看计算记录</button><button onclick="editAgentNote(${a.id},'${esc(a.note||'')}')">备注</button></div>
-     ${a.note?`<div class="subtitle" style="margin-top:8px">备注：${esc(a.note)} <button onclick="deleteAgentNote(${a.id})">删除</button></div>`:''}
+     <div style="display:flex;gap:8px;align-items:center">
+       <button class="record-toggle" onclick="toggleAgentRecords(this)">▼ 查看计算记录</button>
+       <button onclick="editAgentNote(${a.id},'${esc(a.note||'')}')">备注</button>
+       ${a.note?`<button onclick="deleteAgentNote(${a.id})">删除备注</button>`:''}
+     </div>
      <div class="entries agent-records" style="display:none">
        ${rows.length?rows.map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}
      </div>
@@ -108,7 +111,8 @@ function renderDashboardAgents(){
  }).join('')||'<div class="card empty">暂无代理</div>'
 }
 function toggleAgentRecords(btn){
- const box=btn.nextElementSibling;
+ const card=btn.closest('.agent-card');
+ const box=card ? card.querySelector('.agent-records') : null;
  if(!box) return;
  const open=box.style.display==='block';
  box.style.display=open?'none':'block';
@@ -194,3 +198,11 @@ load();
 })();
 </script>
 </body></html>
+<style>
+.agent-note{
+ color:#d93025;
+ font-weight:600;
+ margin-left:8px;
+ font-size:13px;
+}
+</style>
