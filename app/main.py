@@ -251,8 +251,6 @@ def calculate(request: Request, agent_id: int = Form(...), game_id: int = Form(.
     factor = Decimal(game.factor)
     multiplier = [None, Decimal(game.formula1), Decimal(game.formula2), Decimal(game.formula3)][formula_no]
     formula_result = n * factor * multiplier
-    if Decimal(rate.value) != Decimal(rate.value).to_integral_value():
-        raise HTTPException(400, "汇率必须是整数")
     if Decimal(rate.value) == 0:
         raise HTTPException(400, "汇率不能为0")
     raw_result = formula_result / Decimal(rate.value)
@@ -302,16 +300,14 @@ def export_txt(request: Request, db: Session = Depends(db_dep)):
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
     agents = db.scalars(select(Agent).where(Agent.total >= Decimal("50")).order_by(Agent.name)).all()
-    lines = [f"代理计算数据 - {today.isoformat()}", "="*50]
+    lines = []
     for a in agents:
-        rows = db.execute(select(Calculation, Game.name, Rate.name).join(Game, Calculation.game_id==Game.id).join(Rate, Calculation.rate_id==Rate.id)
-                          .where(Calculation.agent_id==a.id, Calculation.created_at>=start, Calculation.created_at<=end)
-                          .order_by(Calculation.created_at)).all()
-        if not rows:
-            continue
-        lines.append(f"\n代理：{a.name}    当日累计：{int(Decimal(a.total))}")
-        for c, gn, rn in rows:
-            lines.append(f"{c.created_at.strftime('%H:%M:%S')} | {gn} | 公式{c.formula_no} | 输入 {int(Decimal(c.input_number))} | 汇率 {rn} | 结果 {int(Decimal(c.result))}")
-    content = "\n".join(lines) + "\n"
-    return PlainTextResponse(content, media_type="text/plain; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="agent_calculation_{today.isoformat()}.txt"'})
+        has_today = db.scalar(select(func.count(Calculation.id)).where(
+            Calculation.agent_id == a.id,
+            Calculation.created_at >= start,
+            Calculation.created_at <= end
+        ))
+        if has_today:
+            lines.append(f"{a.name}    {format(Decimal(a.total), 'f').rstrip('0').rstrip('.')}")
+    content = "\n".join(lines) + ("\n" if lines else "")
+    return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
