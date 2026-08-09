@@ -442,12 +442,12 @@ async def calculate(request: Request, agent_id: int = Form(...), game_id: int = 
                        formula_no=formula_no, input_number=n, formula_result=formula_result, result=result,
                        agent_name_snapshot=agent.name,
                        game_name_snapshot=game.name,
-                       formula_snapshot=f"公式{formula_no}"))
+                       formula_snapshot=f"{n}×{factor}×{multiplier}÷{rate.value}"))
     db.commit()
     await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "formula_result": float(formula_result), "result": float(result), "total": float(agent.total)}
 
-@app.delete("/api/history/{calc_id}")
+@app.delete("/api/history/delete/{calc_id}")
 async def delete_calculation(calc_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     c = db.get(Calculation, calc_id)
@@ -474,7 +474,7 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
     rows = db.execute(q).all()
     fixed = {1:"0.94×0.5", 2:"0.94×0.55", 3:"0.94×0.45"}
     return [{"id": c.id, "time": beijing_time(c.created_at).strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
-             "agent": c.agent_name_snapshot or an or "", "game": c.game_name_snapshot or gn or "", "rate": rn or "", "formula": c.formula_no, "input": float(c.input_number),
+             "agent": c.agent_name_snapshot or an or "", "game": c.game_name_snapshot or gn or "", "rate": rn or "", "formula": c.formula_snapshot or f"公式{c.formula_no}", "input": float(c.input_number),
              "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
              "expression": c.formula_snapshot or f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
             for c, an, gn, rn, rv, un in rows]
