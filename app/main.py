@@ -224,6 +224,17 @@ async def add_agent(request: Request, name: str = Form(...), db: Session = Depen
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
+@app.put("/api/agents/{agent_id}/note")
+async def update_agent_note(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    agent = db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(404, "代理不存在")
+    agent.note = str(payload.get("note", "") or "").strip()
+    db.commit()
+    await ws_manager.broadcast("agent_updated")
+    return {"ok": True, "note": agent.note}
+
 @app.delete("/api/agents/{agent_id}")
 async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
