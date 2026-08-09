@@ -402,7 +402,7 @@ async def delete_calculation(calc_id: int, request: Request, db: Session = Depen
 @app.get("/api/history")
 def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] = None):
     require_user(request, db)
-    q = select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username).join(Agent, Calculation.agent_id==Agent.id).join(Game, Calculation.game_id==Game.id).join(Rate, Calculation.rate_id==Rate.id).join(User, Calculation.user_id==User.id)
+    q = select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username).join(Agent, Calculation.agent_id==Agent.id).outerjoin(Game, Calculation.game_id==Game.id).outerjoin(Rate, Calculation.rate_id==Rate.id).outerjoin(User, Calculation.user_id==User.id)
     if day:
         try:
             d = date.fromisoformat(day)
@@ -413,7 +413,7 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
     rows = db.execute(q).all()
     fixed = {1:"0.94×0.5", 2:"0.94×0.55", 3:"0.94×0.45"}
     return [{"id": c.id, "time": beijing_time(c.created_at).strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
-             "agent": an, "game": gn, "rate": rn, "formula": c.formula_no, "input": float(c.input_number),
+             "agent": an or "", "game": gn or "", "rate": rn or "", "formula": c.formula_no, "input": float(c.input_number),
              "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
              "expression": f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
             for c, an, gn, rn, rv, un in rows]
