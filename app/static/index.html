@@ -25,7 +25,7 @@
 <main class="main">
 <section id="dashboard" class="page active">
 <div class="title"><div><h1>今日概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button></div>
-<div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">今日计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0.0000</div></div></div>
+<div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">今日计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0</div></div></div>
 <div id="dashboardAgents"></div>
 </section>
 
@@ -67,7 +67,7 @@ function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0
 function gameById(){return data.games.find(g=>g.id==+$('game').value)}
 function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`该游戏已绑定固定计算规则：${formulaText(g.formula_choice)} ÷ 汇率`:'请先选择游戏'}
 function renderAll(){
- $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${a.total.toFixed(4)}）</option>`).join('');
+ $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${fmtNum(a.total)}）</option>`).join('');
  $('game').innerHTML=data.games.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
  $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${fmtNum(r.value)}）</option>`).join('');
  $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
@@ -76,14 +76,14 @@ function renderAll(){
 function agentBill(agentId){return historyRows.filter(x=>x.agent_id==agentId)}
 function renderDashboard(){
  $('statAgents').textContent=data.agents.length;
- $('statTotal').textContent=data.agents.reduce((s,a)=>s+a.total,0).toFixed(4);
+ $('statTotal').textContent=fmtNum(data.agents.reduce((s,a)=>s+a.total,0));
  api('/api/history').then(rows=>{historyRows=rows; $('statCalcs').textContent=rows.length; renderDashboardAgents();renderSelectedAgent()})
 }
 function renderDashboardAgents(){
- $('dashboardAgents').innerHTML=data.agents.map(a=>{let rows=agentBill(a.id);return `<div class="card agent-card"><div class="agent-head"><div><div class="agent-name">${esc(a.name)}</div><div class="subtitle">${rows.length} 笔计算记录</div></div><div class="total">${a.total.toFixed(4)}</div></div><div class="entries">${rows.length?rows.slice(0,8).map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}${rows.length>8?'<div class="empty">仅显示最近8笔，历史页面可查看全部</div>':''}</div></div>`}).join('')||'<div class="card empty">暂无代理</div>'
+ $('dashboardAgents').innerHTML=data.agents.map(a=>{let rows=agentBill(a.id);return `<div class="card agent-card"><div class="agent-head"><div><div class="agent-name">${esc(a.name)}</div><div class="subtitle">${rows.length} 笔计算记录</div></div><div class="total">${fmtNum(a.total)}</div></div><div class="entries">${rows.length?rows.slice(0,8).map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}${rows.length>8?'<div class="empty">仅显示最近8笔，历史页面可查看全部</div>':''}</div></div>`}).join('')||'<div class="card empty">暂无代理</div>'
 }
 function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(x.expression)}</div></div><div class="entry-result">+${x.result}</div></div>`}
-function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${a.total.toFixed(4)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
+function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 async function calculate(){try{let fd=new FormData();fd.append('agent_id',$('agent').value);fd.append('game_id',$('game').value);fd.append('rate_id',$('rate').value);fd.append('formula_no','1');fd.append('input_number',$('inputNumber').value);let d=await api('/api/calculate',{method:'POST',body:fd});$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;$('calcMsg').innerHTML='';await load()}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
 async function load(){data=await api('/api/bootstrap');renderAll()}
 $('game').onchange=updateFormulaHint;$('agent').onchange=renderSelectedAgent;
