@@ -82,7 +82,16 @@ function renderDashboard(){
 function renderDashboardAgents(){
  $('dashboardAgents').innerHTML=data.agents.map(a=>{let rows=agentBill(a.id);return `<div class="card agent-card"><div class="agent-head"><div><div class="agent-name">${esc(a.name)}</div><div class="subtitle">${rows.length} 笔计算记录</div></div><div class="total">${fmtNum(a.total)}</div></div><div class="entries">${rows.length?rows.slice(0,8).map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}${rows.length>8?'<div class="empty">仅显示最近8笔，历史页面可查看全部</div>':''}</div></div>`}).join('')||'<div class="card empty">暂无代理</div>'
 }
-function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(x.expression)}</div></div><div class="entry-result">+${x.result}</div></div>`}
+function fmtNum(v){
+ let n=Number(v);
+ if(!Number.isFinite(n)) return v;
+ return String(n).replace(/(\\d+\\.\\d*?[1-9])0+$/,'$1').replace(/\\.0+$/,'');
+}
+function fmtExpression(v){
+ if(!v) return v;
+ return v.replace(/\\d+\\.\\d+/g,function(x){return fmtNum(x);});
+}
+function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)}</div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 async function calculate(){try{let fd=new FormData();fd.append('agent_id',$('agent').value);fd.append('game_id',$('game').value);fd.append('rate_id',$('rate').value);fd.append('formula_no','1');fd.append('input_number',$('inputNumber').value);let d=await api('/api/calculate',{method:'POST',body:fd});$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;$('calcMsg').innerHTML='';await load()}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
 async function load(){data=await api('/api/bootstrap');renderAll()}
