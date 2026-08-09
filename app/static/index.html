@@ -100,9 +100,9 @@ function renderDashboardAgents(){
        <div class="total">${fmtNum(a.total)}</div>
      </div>
      <div style="display:flex;gap:8px;align-items:center">
-       <button class="record-toggle" onclick="toggleAgentRecords(this)">▼ 查看计算记录</button>
-       <button onclick="editAgentNote(${a.id},'${esc(a.note||'')}')">备注</button>
-       ${a.note?`<button onclick="deleteAgentNote(${a.id})">删除备注</button>`:''}
+       <button type="button" class="record-toggle" onclick="event.stopPropagation();toggleAgentRecords(this)">▼ 查看计算记录</button>
+       <button type="button" onclick="event.stopPropagation();editAgentNote(${a.id},'${esc(a.note||'')}')">备注</button>
+       ${a.note?`<button type="button" onclick="event.stopPropagation();deleteAgentNote(${a.id})">删除备注</button>`:''}
      </div>
      <div class="entries agent-records" style="display:none">
        ${rows.length?rows.map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}
