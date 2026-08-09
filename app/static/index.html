@@ -108,7 +108,7 @@ async function executeClear(){
 function renderDashboard(){
  $('statAgents').textContent=data.agents.length;
  $('statTotal').textContent=fmtNum(data.agents.reduce((s,a)=>s+a.total,0));
- api('/api/history').then(rows=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=allHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
+ api('/api/history').then(rows=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=activeHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
 }
 function editAgentNote(id,current){
  let n=prompt("请输入备注：", current||"");
