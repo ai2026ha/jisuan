@@ -56,6 +56,7 @@
 <script>
 let data={agents:[],games:[],rates:[]},historyRows=[];
 const $=id=>document.getElementById(id);
+function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); return String(n);} 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok)throw Error(d.detail||'操作失败');return d}
 function tab(id,btn){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
@@ -65,7 +66,7 @@ function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`�
 function renderAll(){
  $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${a.total.toFixed(4)}）</option>`).join('');
  $('game').innerHTML=data.games.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
- $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${Math.trunc(Number(r.value))}）</option>`).join('');
+ $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${fmtNum(r.value)}）</option>`).join('');
  $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
  renderAgentTable();renderGameTable();renderRateTable();renderDashboard();renderSelectedAgent();updateFormulaHint()
 }
@@ -93,7 +94,7 @@ async function delGame(id){if(!confirm('确定删除？已有历史记录的游�
 function renderGameTable(){$('gameTable').innerHTML='<table><thead><tr><th>游戏名</th><th>绑定规则</th><th>操作</th></tr></thead><tbody>'+data.games.map(g=>`<tr><td><b>${esc(g.name)}</b></td><td><span class="badge">固定公式${g.formula_choice}</span></td><td><button class="danger" onclick="delGame(${g.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
 async function addRate(){let fd=new FormData();fd.append('name',$('newRateName').value);fd.append('value',$('newRateValue').value);try{await api('/api/rates',{method:'POST',body:fd});$('newRateName').value='';$('newRateValue').value='';await load()}catch(e){alert(e.message)}}
 async function delRate(id){if(!confirm('确定删除？已有历史记录的汇率不能删除。'))return;try{await api('/api/rates/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
-function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${Math.trunc(Number(r.value))}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
+function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${fmtNum(r.value)}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
 async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
 async function loadHistory(){try{let qs=[];if($('historyDay').value)qs.push('day='+$('historyDay').value);let rows=await api('/api/history'+(qs.length?'?'+qs.join('&'):''));historyRows=rows;let aid=$('historyAgent').value;if(aid)rows=rows.filter(x=>x.agent_id==aid);$('historyTable').innerHTML='<table><thead><tr><th>时间</th><th>代理</th><th>游戏</th><th>计算式</th><th>结果</th><th>用户</th><th>操作</th></tr></thead><tbody>'+rows.map(x=>`<tr><td>${x.time}</td><td>${esc(x.agent)}</td><td>${esc(x.game)}</td><td>${esc(x.expression)}</td><td><b>${x.result}</b></td><td>${esc(x.user)}</td><td><button class="danger" onclick="deleteCalculation(${x.id})">删除</button></td></tr>`).join('')+'</tbody></table>'+(rows.length?'':'<p class="empty">暂无记录</p>')}catch(e){alert(e.message)}}
 load();
