@@ -116,8 +116,46 @@ function fmtExpression(v){
 }
 function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)}</div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
-async function calculate(){try{const keepAgent=$('agent').value;let fd=new FormData();fd.append('agent_id',keepAgent);fd.append('game_id',$('game').value);fd.append('rate_id',$('rate').value);fd.append('formula_no','1');fd.append('input_number',$('inputNumber').value);let d=await api('/api/calculate',{method:'POST',body:fd});$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;$('calcMsg').innerHTML='';await load();$('agent').value=keepAgent;renderSelectedAgent()}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
-async function load(){data=await api('/api/bootstrap');renderAll(); if(currentPage && $(currentPage)) tab(currentPage)}
+function saveSelectState(){
+ window.__selectState={
+  agent:$('agent')?$('agent').value:null,
+  game:$('game')?$('game').value:null,
+  rate:$('rate')?$('rate').value:null
+ };
+}
+function restoreSelectState(){
+ const s=window.__selectState||{};
+ if($('agent') && s.agent && [...$('agent').options].some(o=>o.value==s.agent)) $('agent').value=s.agent;
+ if($('game') && s.game && [...$('game').options].some(o=>o.value==s.game)) $('game').value=s.game;
+ if($('rate') && s.rate && [...$('rate').options].some(o=>o.value==s.rate)) $('rate').value=s.rate;
+ updateFormulaHint();
+ if($('agent')) renderSelectedAgent();
+}
+async function calculate(){try{
+saveSelectState();
+const keepAgent=$('agent').value;
+const keepGame=$('game').value;
+const keepRate=$('rate').value;
+let fd=new FormData();
+fd.append('agent_id',keepAgent);
+fd.append('game_id',keepGame);
+fd.append('rate_id',keepRate);
+fd.append('formula_no','1');
+fd.append('input_number',$('inputNumber').value);
+let d=await api('/api/calculate',{method:'POST',body:fd});
+$('result').innerHTML=`<div class="resultbox">本次计算结果<div class="big">${d.result}</div><div class="subtitle">已自动累计到该代理</div></div>`;
+$('calcMsg').innerHTML='';
+await load();
+restoreSelectState();
+}catch(e){$('calcMsg').innerHTML='<div class="notice dangerText">'+esc(e.message)+'</div>'}}
+async function load(){
+const keepPage=currentPage;
+saveSelectState();
+data=await api('/api/bootstrap');
+renderAll();
+restoreSelectState();
+if(keepPage && $(keepPage)) tab(keepPage);
+}
 $('game').onchange=updateFormulaHint;$('agent').onchange=renderSelectedAgent;
 async function addAgent(){let fd=new FormData();fd.append('name',$('newAgent').value);try{await api('/api/agents',{method:'POST',body:fd});$('newAgent').value='';await load()}catch(e){alert(e.message)}}
 async function delAgent(id){if(!confirm('确定删除该代理？'))return;try{await api('/api/agents/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
