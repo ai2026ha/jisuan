@@ -463,7 +463,7 @@ async def delete_calculation(calc_id: int, request: Request, db: Session = Depen
 @app.get("/api/history")
 def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] = None):
     require_user(request, db)
-    q = select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username).join(Agent, Calculation.agent_id==Agent.id).outerjoin(Game, Calculation.game_id==Game.id).outerjoin(Rate, Calculation.rate_id==Rate.id).outerjoin(User, Calculation.user_id==User.id)
+    q = select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username).outerjoin(Agent, Calculation.agent_id==Agent.id).outerjoin(Game, Calculation.game_id==Game.id).outerjoin(Rate, Calculation.rate_id==Rate.id).outerjoin(User, Calculation.user_id==User.id)
     if day:
         try:
             d = date.fromisoformat(day)
@@ -485,6 +485,7 @@ async def clear_history(request: Request, db: Session = Depends(db_dep)):
     # 仅清除历史记录，不修改代理金额、代理状态、游戏、汇率等数据
     deleted = db.query(Calculation).delete(synchronize_session=False)
     db.commit()
+    await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "deleted": deleted}
 
 @app.get("/api/export/txt")
