@@ -80,7 +80,29 @@ function renderDashboard(){
  api('/api/history').then(rows=>{historyRows=rows; $('statCalcs').textContent=rows.length; renderDashboardAgents();renderSelectedAgent()})
 }
 function renderDashboardAgents(){
- $('dashboardAgents').innerHTML=data.agents.map(a=>{let rows=agentBill(a.id);return `<div class="card agent-card"><div class="agent-head"><div><div class="agent-name">${esc(a.name)}</div><div class="subtitle">${rows.length} 笔计算记录</div></div><div class="total">${fmtNum(a.total)}</div></div><div class="entries">${rows.length?rows.slice(0,8).map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}${rows.length>8?'<div class="empty">仅显示最近8笔，历史页面可查看全部</div>':''}</div></div>`}).join('')||'<div class="card empty">暂无代理</div>'
+ $('dashboardAgents').innerHTML=data.agents.map(a=>{
+   let rows=agentBill(a.id);
+   return `<div class="card agent-card">
+     <div class="agent-head">
+       <div>
+         <div class="agent-name">${esc(a.name)}</div>
+         <div class="subtitle">${rows.length} 笔计算记录</div>
+       </div>
+       <div class="total">${fmtNum(a.total)}</div>
+     </div>
+     <button class="record-toggle" onclick="toggleAgentRecords(this)">▼ 查看计算记录</button>
+     <div class="entries agent-records" style="display:none">
+       ${rows.length?rows.map(entryHtml).join(''):'<div class="empty">暂无计算记录</div>'}
+     </div>
+   </div>`
+ }).join('')||'<div class="card empty">暂无代理</div>'
+}
+function toggleAgentRecords(btn){
+ const box=btn.nextElementSibling;
+ if(!box) return;
+ const open=box.style.display==='block';
+ box.style.display=open?'none':'block';
+ btn.textContent=open?'▼ 查看计算记录':'▲ 收起计算记录';
 }
 function fmtNum(v){
  let n=Number(v);
