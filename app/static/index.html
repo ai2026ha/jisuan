@@ -67,7 +67,7 @@ let currentPage='dashboard';
 const $=id=>document.getElementById(id);
 function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); return String(n);} 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok)throw Error(d.detail||'操作失败');return d}
+async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok){let msg=d.detail || d.message || JSON.stringify(d); throw Error(typeof msg==='string'?msg:JSON.stringify(msg));}return d}
 function tab(id,btn){currentPage=id;document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
 function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0.55','数字 × 0.94 × 0.45'][n]}
 function gameById(){return data.games.find(g=>g.id==+$('game').value)}
