@@ -49,6 +49,7 @@ class Agent(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), unique=True, nullable=False)
     total = Column(Numeric(18, 4), default=0, nullable=False)
+    manual_adjust = Column(Numeric(18, 4), default=0, nullable=False)
     note = Column(String(500), default="")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -97,6 +98,18 @@ def ensure_agent_note_column():
         pass
 
 ensure_agent_note_column()
+
+# 兼容已有生产数据库：增加代理人工调整金额字段
+try:
+    with engine.begin() as conn:
+        if DATABASE_URL:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN IF NOT EXISTS manual_adjust NUMERIC(18,4) DEFAULT 0"))
+        else:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(agents)")).fetchall()]
+            if "manual_adjust" not in cols:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN manual_adjust NUMERIC(18,4) DEFAULT 0"))
+except Exception:
+    pass
 
 def seed():
     db = SessionLocal()
@@ -234,6 +247,30 @@ async def update_agent_note(agent_id: int, payload: dict, request: Request, db: 
     db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True, "note": agent.note}
+
+@app.put("/api/agents/{agent_id}/adjust")
+async def adjust_agent_total(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    agent = db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(404, "代理不存在")
+    value = str(payload.get("value", "")).strip()
+    try:
+        old_total = Decimal(agent.total or 0)
+        if value.startswith("+") or value.startswith("-"):
+            delta = Decimal(value)
+            agent.manual_adjust = Decimal(agent.manual_adjust or 0) + delta
+            agent.total = old_total + delta
+        else:
+            new_total = Decimal(value)
+            delta = new_total - old_total
+            agent.manual_adjust = Decimal(agent.manual_adjust or 0) + delta
+            agent.total = new_total
+        db.commit()
+    except Exception:
+        raise HTTPException(400, "金额格式错误")
+    await ws_manager.broadcast("agent_updated")
+    return {"ok": True, "total": float(agent.total)}
 
 @app.delete("/api/agents/{agent_id}")
 async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):

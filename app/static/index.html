@@ -68,7 +68,7 @@ function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0
 function gameById(){return data.games.find(g=>g.id==+$('game').value)}
 function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`该游戏已绑定固定计算规则：${formulaText(g.formula_choice)} ÷ 汇率`:'请先选择游戏'}
 function renderAll(){
- $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}（${fmtNum(a.total)}）</option>`).join('');
+ $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
  $('game').innerHTML=data.games.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
  $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${fmtNum(r.value)}）</option>`).join('');
  $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
@@ -88,6 +88,12 @@ function editAgentNote(id,current){
 function deleteAgentNote(id){
  api('/api/agents/'+id+'/note',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:''})}).then(()=>load());
 }
+async function adjustAgentTotal(id,current){
+ let v=prompt("请输入金额调整：\n支持 +50、-50 或直接输入目标金额", "");
+ if(v===null || !v.trim()) return;
+ await api('/api/agents/'+id+'/adjust',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:v.trim()})});
+ load();
+}
 function renderDashboardAgents(){
  $('dashboardAgents').innerHTML=data.agents.map(a=>{
    let rows=agentBill(a.id);
@@ -97,7 +103,7 @@ function renderDashboardAgents(){
          <div class="agent-name">${esc(a.name)}${a.note?` <span class="agent-note">${esc(a.note)}</span>`:''}</div>
          <div class="subtitle">${rows.length} 笔计算记录</div>
        </div>
-       <div class="total">${fmtNum(a.total)}</div>
+       <div class="total" style="cursor:pointer" title="点击调整金额" onclick="event.stopPropagation();adjustAgentTotal(${a.id},${a.total})">${fmtNum(a.total)}</div>
      </div>
      <div style="display:flex;gap:8px;align-items:center">
        <button type="button" class="record-toggle" onclick="event.stopPropagation();toggleAgentRecords(this)">▼ 查看计算记录</button>
@@ -127,7 +133,8 @@ function fmtExpression(v){
  if(!v) return v;
  return String(v).replace(/\d+(?:\.\d+)?/g,function(x){return fmtNum(x);});
 }
-function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)}</div></div>`}
+function deleteHistory(id){ if(!confirm("确定删除该计算记录？")) return; api('/api/history/'+id,{method:'DELETE'}).then(()=>load()); }
+function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)} <button type="button" onclick="event.stopPropagation();deleteHistory(${x.id})">删除</button></div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 function saveSelectState(){
  window.__selectState={
