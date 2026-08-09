@@ -288,7 +288,7 @@ async def clear_agents(request: Request, agent_ids: list[int] = Form(...), db: S
     require_user(request, db)
     for aid in agent_ids:
         a = db.get(Agent, aid)
-        if a: a.total = Decimal("0")
+        if a:\n            a.total = Decimal("0")\n            a.manual_adjust = Decimal("0")
     db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
