@@ -286,7 +286,7 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
         except ValueError: raise HTTPException(400, "日期格式错误")
     q = q.order_by(Calculation.created_at.desc())
     rows = db.execute(q).all()
-    fixed = {1:"0.94×0.50", 2:"0.94×0.55", 3:"0.94×0.45"}
+    fixed = {1:"0.94×0.5", 2:"0.94×0.55", 3:"0.94×0.45"}
     return [{"id": c.id, "time": c.created_at.strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
              "agent": an, "game": gn, "rate": rn, "formula": c.formula_no, "input": float(c.input_number),
              "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
