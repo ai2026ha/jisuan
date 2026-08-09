@@ -479,6 +479,14 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
              "expression": c.formula_snapshot or f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
             for c, an, gn, rn, rv, un in rows]
 
+@app.delete("/api/history/clear")
+async def clear_history(request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    # 仅清除历史记录，不修改代理金额、代理状态、游戏、汇率等数据
+    db.query(Calculation).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True}
+
 @app.get("/api/export/txt")
 def export_txt(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)

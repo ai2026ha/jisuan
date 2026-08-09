@@ -59,7 +59,7 @@
 <div class="card"><div class="row"><div class="field"><label>汇率名称</label><input id="newRateName" placeholder="例如 人民币汇率"></div><div class="field"><label>汇率数值</label><input id="newRateValue" type="number" step="1" min="1" placeholder="例如 7"></div><button class="primary" onclick="addRate()">新增汇率</button></div><div id="rateTable"></div></div></section>
 
 <section id="history" class="page"><div class="title"><div><h1>历史计算</h1><div class="subtitle">每笔记录保留代理、游戏、实际计算式和结果</div></div></div>
-<div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div id="historyTable"></div></div></section>
+<div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button class="primary" onclick="clearHistory()">清除历史</button><button class="primary" onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div id="historyTable"></div></div></section>
 </main></div>
 <script>
 let data={agents:[],games:[],rates:[]},historyRows=[],allHistoryRows=[],activeHistoryRows=[];
@@ -222,6 +222,12 @@ async function addRate(){let fd=new FormData();fd.append('name',$('newRateName')
 async function delRate(id){if(!confirm('确定删除？已有历史记录的汇率不能删除。'))return;try{await api('/api/rates/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
 function renderRateTable(){$('rateTable').innerHTML='<table><thead><tr><th>汇率名称</th><th>汇率</th><th>操作</th></tr></thead><tbody>'+data.rates.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td><b>${fmtNum(r.value)}</b></td><td><button class="danger" onclick="delRate(${r.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
 async function deleteCalculation(id){if(!confirm('确定删除这条计算记录吗？删除后会从该代理累计总额中扣除。'))return;try{await api('/api/history/'+id,{method:'DELETE'});await loadHistory();await load()}catch(e){alert(e.message)}}
+
+async function clearHistory(){
+    if(!confirm("确定清除全部历史记录？")) return;
+    await api("/api/history/clear",{method:"DELETE"});
+    await loadHistory();
+}
 async function loadHistory(){try{let qs=[];if($('historyDay').value)qs.push('day='+$('historyDay').value);let rows=await api('/api/history'+(qs.length?'?'+qs.join('&'):''));allHistoryRows=rows; let aid=$('historyAgent').value;if(aid)rows=rows.filter(x=>x.agent_id==aid);$('historyTable').innerHTML='<table><thead><tr><th>时间</th><th>代理</th><th>游戏</th><th>计算式</th><th>结果</th><th>用户</th><th>操作</th></tr></thead><tbody>'+rows.map(x=>`<tr><td>${x.time}</td><td>${esc(x.agent)}</td><td>${esc(x.game)}</td><td>${esc(fmtExpression(x.expression))}</td><td><b>${fmtNum(x.result)}</b></td><td>${esc(x.user)}</td><td><button class="danger" onclick="deleteCalculation(${x.id})">删除</button></td></tr>`).join('')+'</tbody></table>'+(rows.length?'':'<p class="empty">暂无记录</p>')}catch(e){alert(e.message)}}
 load();
 </script>
