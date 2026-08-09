@@ -44,7 +44,11 @@
 <div class="card"><div class="row"><div class="field"><label>新增代理</label><input id="newAgent" placeholder="代理名称"></div><button class="primary" onclick="addAgent()">新增代理</button></div><div id="agentTable"></div></div></section>
 
 <section id="games" class="page"><div class="title"><div><h1>游戏管理</h1><div class="subtitle">新增游戏时绑定一个固定公式，添加后不提供修改</div></div></div>
-<div class="card"><div class="gridform"><div><label>游戏名称</label><input id="newGame" placeholder="例如 游戏A"></div><div><label>绑定固定公式</label><div class="formulaChoice">公式①：流水 × 0.94 × 0.5<br>公式②：流水 × 0.94 × 0.55<br>公式③：流水 × 0.94 × 0.45</div></div></div><div class="notice">固定公式：① 流水 × 0.94 × 0.5　② 流水 × 0.94 × 0.55　③ 流水 × 0.94 × 0.45</div><button class="primary" onclick="addGame()">添加游戏</button><div id="gameTable"></div></div></section>
+<div class="card"><div class="gridform"><div><label>游戏名称</label><input id="newGame" placeholder="例如 游戏A"></div><div><label>绑定固定公式</label><div class="formulaChoice">
+<label><input type="radio" name="fc" value="1" checked> 公式①：流水 × 0.94 × 0.5</label><br>
+<label><input type="radio" name="fc" value="2"> 公式②：流水 × 0.94 × 0.55</label><br>
+<label><input type="radio" name="fc" value="3"> 公式③：流水 × 0.94 × 0.45</label>
+</div></div></div><div class="notice">固定公式：① 流水 × 0.94 × 0.5　② 流水 × 0.94 × 0.55　③ 流水 × 0.94 × 0.45</div><button class="primary" onclick="addGame()">添加游戏</button><div id="gameTable"></div></div></section>
 
 <section id="rates" class="page"><div class="title"><div><h1>汇率管理</h1><div class="subtitle">计算时固定采用除以汇率</div></div></div>
 <div class="card"><div class="row"><div class="field"><label>汇率名称</label><input id="newRateName" placeholder="例如 人民币汇率"></div><div class="field"><label>汇率数值</label><input id="newRateValue" type="number" step="1" min="1" placeholder="例如 7"></div><button class="primary" onclick="addRate()">新增汇率</button></div><div id="rateTable"></div></div></section>
