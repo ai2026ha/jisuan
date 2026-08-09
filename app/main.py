@@ -242,7 +242,7 @@ def logout(request: Request):
 def bootstrap(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     return {
-        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).order_by(Agent.name)).all()],
+        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).order_by(Agent.id.asc())).all()],
         "games": [{"id": g.id, "name": g.name, "formula_choice": g.formula_choice,
                    "factor": float(g.factor), "f1": float(g.formula1), "f2": float(g.formula2), "f3": float(g.formula3)}
                   for g in db.scalars(select(Game).order_by(Game.name)).all()],
