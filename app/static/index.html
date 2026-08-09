@@ -205,7 +205,7 @@ async function load(){
 const keepPage=currentPage;
 saveSelectState();
 data=await api('/api/bootstrap');
-if(data.agents){data.agents.sort((a,b)=>a.id-b.id);}
+if(data.agents){data.agents.sort((a,b)=>(Number(a.sort_order ?? a.id)-Number(b.sort_order ?? b.id)) || (a.id-b.id));}
 renderAll();
 restoreSelectState();
 if(keepPage && $(keepPage)) tab(keepPage);

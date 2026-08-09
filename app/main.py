@@ -61,6 +61,8 @@ class Agent(Base):
     manual_adjust = Column(Numeric(18, 4), default=0, nullable=False)
     note = Column(String(500), default="")
     is_deleted = Column(Boolean, default=False, nullable=False)
+    # 显示顺序：严格记录“新增/重新新增”代理的先后顺序，不使用名称排序。
+    sort_order = Column(Integer, nullable=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class Game(Base):
@@ -112,6 +114,24 @@ def ensure_soft_delete_columns():
         pass
 
 ensure_soft_delete_columns()
+
+# 兼容已有生产数据库：增加代理显示顺序字段。
+# 旧数据首次升级时按 id 回填，后续每次新增/重新新增代理都会追加到列表末尾。
+def ensure_agent_sort_order_column():
+    try:
+        with engine.begin() as conn:
+            if DATABASE_URL:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN IF NOT EXISTS sort_order INTEGER"))
+                conn.execute(text("UPDATE agents SET sort_order = id WHERE sort_order IS NULL"))
+            else:
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(agents)")).fetchall()]
+                if "sort_order" not in cols:
+                    conn.execute(text("ALTER TABLE agents ADD COLUMN sort_order INTEGER"))
+                conn.execute(text("UPDATE agents SET sort_order = id WHERE sort_order IS NULL"))
+    except Exception:
+        pass
+
+ensure_agent_sort_order_column()
 
 # 兼容已有生产数据库：为旧 agents 表补充备注字段
 def ensure_agent_note_column():
@@ -172,7 +192,7 @@ def seed():
         if not db.scalar(select(User).where(User.username == "admin")):
             db.add(User(username="admin", password_hash=pwd.hash("admin123"), role="admin"))
         if not db.scalar(select(Agent)):
-            db.add_all([Agent(name="示例代理A"), Agent(name="示例代理B")])
+            db.add_all([Agent(name="示例代理A", sort_order=1), Agent(name="示例代理B", sort_order=2)])
         if not db.scalar(select(Game)):
             db.add(Game(name="示例游戏", factor=Decimal("0.94"),
                         formula1=Decimal("0.50"), formula2=Decimal("0.55"), formula3=Decimal("0.45"),
@@ -275,12 +295,16 @@ def logout(request: Request):
 def bootstrap(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     return {
-        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).where(Agent.is_deleted == False).order_by(Agent.id.asc())).all()],
+        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or "", "sort_order": int(a.sort_order or a.id)} for a in db.scalars(select(Agent).where(Agent.is_deleted == False).order_by(Agent.sort_order.asc(), Agent.id.asc())).all()],
         "games": [{"id": g.id, "name": g.name, "formula_choice": g.formula_choice,
                    "factor": float(g.factor), "f1": float(g.formula1), "f2": float(g.formula2), "f3": float(g.formula3)}
                   for g in db.scalars(select(Game).where(Game.is_deleted == False).order_by(Game.name)).all()],
         "rates": [{"id": r.id, "name": r.name, "value": float(r.value)} for r in db.scalars(select(Rate).where(Rate.is_deleted == False).order_by(Rate.name)).all()],
     }
+
+def next_agent_sort_order(db: Session) -> int:
+    current_max = db.scalar(select(func.max(Agent.sort_order)))
+    return int(current_max or 0) + 1
 
 @app.post("/api/agents")
 async def add_agent(request: Request, name: str = Form(...), db: Session = Depends(db_dep)):
@@ -292,10 +316,12 @@ async def add_agent(request: Request, name: str = Form(...), db: Session = Depen
     old_agent = db.scalar(select(Agent).where(Agent.name == name, Agent.is_deleted == True))
     if old_agent:
         old_agent.is_deleted = False
+        # “重新新增”视为一次新的新增操作，放到当前代理列表末尾。
+        old_agent.sort_order = next_agent_sort_order(db)
         db.commit()
         await ws_manager.broadcast("agent_updated")
         return {"ok": True}
-    db.add(Agent(name=name)); db.commit()
+    db.add(Agent(name=name, sort_order=next_agent_sort_order(db))); db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
@@ -494,7 +520,7 @@ def export_txt(request: Request, db: Session = Depends(db_dep)):
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
-    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.id.asc())).all()
+    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.sort_order.asc(), Agent.id.asc())).all()
     lines = []
     for a in agents:
         has_today = db.scalar(select(func.count(Calculation.id)).where(
