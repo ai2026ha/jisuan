@@ -60,11 +60,13 @@ class Agent(Base):
     total = Column(Numeric(18, 4), default=0, nullable=False)
     manual_adjust = Column(Numeric(18, 4), default=0, nullable=False)
     note = Column(String(500), default="")
+    is_deleted = Column(Boolean, default=False, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class Game(Base):
     __tablename__ = "games"
     id = Column(Integer, primary_key=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)
     name = Column(String(120), unique=True, nullable=False)
     factor = Column(Numeric(12, 6), default=Decimal("0.94"), nullable=False)
     formula1 = Column(Numeric(12, 6), default=Decimal("0.50"), nullable=False)
@@ -75,6 +77,7 @@ class Game(Base):
 class Rate(Base):
     __tablename__ = "rates"
     id = Column(Integer, primary_key=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)
     name = Column(String(120), nullable=False)
     value = Column(Numeric(18, 8), nullable=False)
 
@@ -96,6 +99,19 @@ class Calculation(Base):
     formula_snapshot = Column(String(255), nullable=True)
 
 Base.metadata.create_all(engine)
+
+# 兼容已有生产数据库：补充软删除字段
+def ensure_soft_delete_columns():
+    try:
+        with engine.begin() as conn:
+            if DATABASE_URL:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE games ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE rates ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE"))
+    except Exception:
+        pass
+
+ensure_soft_delete_columns()
 
 # 兼容已有生产数据库：为旧 agents 表补充备注字段
 def ensure_agent_note_column():
@@ -259,7 +275,7 @@ def logout(request: Request):
 def bootstrap(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     return {
-        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).order_by(Agent.id.asc())).all()],
+        "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or ""} for a in db.scalars(select(Agent).where(Agent.is_deleted == False).order_by(Agent.id.asc())).all()],
         "games": [{"id": g.id, "name": g.name, "formula_choice": g.formula_choice,
                    "factor": float(g.factor), "f1": float(g.formula1), "f2": float(g.formula2), "f3": float(g.formula3)}
                   for g in db.scalars(select(Game).order_by(Game.name)).all()],
@@ -316,7 +332,7 @@ async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_de
     require_user(request, db)
     agent = db.get(Agent, agent_id)
     if not agent: raise HTTPException(404, "代理不存在")
-    db.delete(agent); db.commit()
+    agent.is_deleted = True; db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
@@ -354,9 +370,8 @@ async def del_game(game_id: int, request: Request, db: Session = Depends(db_dep)
     require_user(request, db)
     g = db.get(Game, game_id)
     if not g: raise HTTPException(404, "游戏不存在")
-    if db.scalar(select(Calculation).where(Calculation.game_id == game_id)):
-        raise HTTPException(400, "该游戏已有历史计算记录，不能直接删除；建议保留游戏以保证历史数据完整")
-    db.delete(g); db.commit()
+    g.is_deleted = True
+    db.commit()
     await ws_manager.broadcast("game_updated")
     return {"ok": True}
 
@@ -374,9 +389,8 @@ async def del_rate(rate_id: int, request: Request, db: Session = Depends(db_dep)
     require_user(request, db)
     r = db.get(Rate, rate_id)
     if not r: raise HTTPException(404, "汇率不存在")
-    if db.scalar(select(Calculation).where(Calculation.rate_id == rate_id)):
-        raise HTTPException(400, "该汇率已有历史计算记录，不能直接删除；建议保留汇率以保证历史数据完整")
-    db.delete(r); db.commit()
+    r.is_deleted = True
+    db.commit()
     await ws_manager.broadcast("rate_updated")
     return {"ok": True}
 
