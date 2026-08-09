@@ -5,7 +5,7 @@ from urllib.parse import quote
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Form, Request, HTTPException
+from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -108,9 +108,42 @@ def business_round(value: Decimal) -> int:
     return integer if fraction_first >= 4 else integer - 1
 
 app = FastAPI(title="代理计算管理系统")
+
+# WebSocket realtime sync base (v29.1 fixed)
+class ConnectionManager:
+    def __init__(self):
+        self.connections = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.connections.discard(websocket)
+
+    async def broadcast(self, message: str):
+        for ws in list(self.connections):
+            try:
+                await ws.send_text(message)
+            except Exception:
+                self.disconnect(ws)
+
+
+ws_manager = ConnectionManager()
+
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"), max_age=60*60*24*7)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "static"))
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
 
 def db_dep():
     db = SessionLocal()
@@ -166,35 +199,38 @@ def bootstrap(request: Request, db: Session = Depends(db_dep)):
     }
 
 @app.post("/api/agents")
-def add_agent(request: Request, name: str = Form(...), db: Session = Depends(db_dep)):
+async def add_agent(request: Request, name: str = Form(...), db: Session = Depends(db_dep)):
     require_user(request, db)
     name = name.strip()
     if not name: raise HTTPException(400, "代理名不能为空")
     if db.scalar(select(Agent).where(Agent.name == name)): raise HTTPException(400, "代理已存在")
     db.add(Agent(name=name)); db.commit()
+    await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
 @app.delete("/api/agents/{agent_id}")
-def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):
+async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     agent = db.get(Agent, agent_id)
     if not agent: raise HTTPException(404, "代理不存在")
     if db.scalar(select(Calculation).where(Calculation.agent_id == agent_id)):
         raise HTTPException(400, "该代理已有历史计算记录，不能直接删除；建议保留代理以保证历史数据完整")
     db.delete(agent); db.commit()
+    await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
 @app.post("/api/agents/clear")
-def clear_agents(request: Request, agent_ids: list[int] = Form(...), db: Session = Depends(db_dep)):
+async def clear_agents(request: Request, agent_ids: list[int] = Form(...), db: Session = Depends(db_dep)):
     require_user(request, db)
     for aid in agent_ids:
         a = db.get(Agent, aid)
         if a: a.total = Decimal("0")
     db.commit()
+    await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
 @app.post("/api/games")
-def add_game(request: Request, name: str = Form(...), formula_choice: int = Form(...),
+async def add_game(request: Request, name: str = Form(...), formula_choice: int = Form(...),
              db: Session = Depends(db_dep)):
     require_user(request, db)
     name = name.strip()
@@ -204,38 +240,42 @@ def add_game(request: Request, name: str = Form(...), formula_choice: int = Form
     g = Game(name=name, factor=Decimal("0.94"), formula1=Decimal("0.50"),
              formula2=Decimal("0.55"), formula3=Decimal("0.45"), formula_choice=formula_choice)
     db.add(g); db.commit()
+    await ws_manager.broadcast("game_updated")
     return {"ok": True}
 
 @app.delete("/api/games/{game_id}")
-def del_game(game_id: int, request: Request, db: Session = Depends(db_dep)):
+async def del_game(game_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     g = db.get(Game, game_id)
     if not g: raise HTTPException(404, "游戏不存在")
     if db.scalar(select(Calculation).where(Calculation.game_id == game_id)):
         raise HTTPException(400, "该游戏已有历史计算记录，不能直接删除；建议保留游戏以保证历史数据完整")
     db.delete(g); db.commit()
+    await ws_manager.broadcast("game_updated")
     return {"ok": True}
 
 @app.post("/api/rates")
-def add_rate(request: Request, name: str = Form(...), value: str = Form(...), db: Session = Depends(db_dep)):
+async def add_rate(request: Request, name: str = Form(...), value: str = Form(...), db: Session = Depends(db_dep)):
     require_user(request, db)
     try: v = Decimal(value)
     except Exception: raise HTTPException(400, "汇率必须是数字")
     db.add(Rate(name=name.strip(), value=v)); db.commit()
+    await ws_manager.broadcast("rate_updated")
     return {"ok": True}
 
 @app.delete("/api/rates/{rate_id}")
-def del_rate(rate_id: int, request: Request, db: Session = Depends(db_dep)):
+async def del_rate(rate_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     r = db.get(Rate, rate_id)
     if not r: raise HTTPException(404, "汇率不存在")
     if db.scalar(select(Calculation).where(Calculation.rate_id == rate_id)):
         raise HTTPException(400, "该汇率已有历史计算记录，不能直接删除；建议保留汇率以保证历史数据完整")
     db.delete(r); db.commit()
+    await ws_manager.broadcast("rate_updated")
     return {"ok": True}
 
 @app.post("/api/calculate")
-def calculate(request: Request, agent_id: int = Form(...), game_id: int = Form(...),
+async def calculate(request: Request, agent_id: int = Form(...), game_id: int = Form(...),
               rate_id: int = Form(...), formula_no: int = Form(...), input_number: str = Form(...),
               db: Session = Depends(db_dep)):
     user = require_user(request, db)
@@ -260,10 +300,11 @@ def calculate(request: Request, agent_id: int = Form(...), game_id: int = Form(.
     db.add(Calculation(user_id=user.id, agent_id=agent.id, game_id=game.id, rate_id=rate.id,
                        formula_no=formula_no, input_number=n, formula_result=formula_result, result=result))
     db.commit()
+    await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "formula_result": float(formula_result), "result": float(result), "total": float(agent.total)}
 
 @app.delete("/api/history/{calc_id}")
-def delete_calculation(calc_id: int, request: Request, db: Session = Depends(db_dep)):
+async def delete_calculation(calc_id: int, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     c = db.get(Calculation, calc_id)
     if not c:
