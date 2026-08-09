@@ -84,12 +84,12 @@ function renderDashboardAgents(){
 }
 function fmtNum(v){
  let n=Number(v);
- if(!Number.isFinite(n)) return v;
- return String(n).replace(/(\\d+\\.\\d*?[1-9])0+$/,'$1').replace(/\\.0+$/,'');
+ if(!Number.isFinite(n)) return String(v);
+ return String(n);
 }
 function fmtExpression(v){
  if(!v) return v;
- return v.replace(/\\d+\\.\\d+/g,function(x){return fmtNum(x);});
+ return String(v).replace(/\d+(?:\.\d+)?/g,function(x){return fmtNum(x);});
 }
 function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)}</div></div>`}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
