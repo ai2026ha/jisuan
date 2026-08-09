@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, W
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, ForeignKey, select, func, text
+from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, Boolean, ForeignKey, select, func, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
 from starlette.middleware.sessions import SessionMiddleware
@@ -81,6 +81,7 @@ class Calculation(Base):
     input_number = Column(Numeric(18, 6), nullable=False)
     formula_result = Column(Numeric(18, 6), nullable=False)
     result = Column(Numeric(18, 6), nullable=False)
+    cleared = Column(Boolean, default=False, nullable=False)
 
 Base.metadata.create_all(engine)
 
@@ -108,6 +109,18 @@ try:
             cols = [r[1] for r in conn.execute(text("PRAGMA table_info(agents)")).fetchall()]
             if "manual_adjust" not in cols:
                 conn.execute(text("ALTER TABLE agents ADD COLUMN manual_adjust NUMERIC(18,4) DEFAULT 0"))
+except Exception:
+    pass
+
+# 兼容已有生产数据库：增加清零状态字段（清零隐藏当前账单，但保留历史查询）
+try:
+    with engine.begin() as conn:
+        if DATABASE_URL:
+            conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS cleared BOOLEAN DEFAULT FALSE"))
+        else:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(calculations)")).fetchall()]
+            if "cleared" not in cols:
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN cleared BOOLEAN DEFAULT 0"))
 except Exception:
     pass
 
@@ -286,11 +299,14 @@ async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_de
 @app.post("/api/agents/clear")
 async def clear_agents(request: Request, agent_ids: list[int] = Form(...), db: Session = Depends(db_dep)):
     require_user(request, db)
-    for aid in agent_ids:
+    ids = set(agent_ids)
+    for aid in ids:
         a = db.get(Agent, aid)
         if a:
             a.total = Decimal("0")
             a.manual_adjust = Decimal("0")
+        for c in db.scalars(select(Calculation).where(Calculation.agent_id == aid, Calculation.cleared == False)).all():
+            c.cleared = True
     db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
@@ -398,7 +414,7 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
     return [{"id": c.id, "time": c.created_at.strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
              "agent": an, "game": gn, "rate": rn, "formula": c.formula_no, "input": float(c.input_number),
              "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
-             "expression": f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}"}
+             "expression": f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
             for c, an, gn, rn, rv, un in rows]
 
 @app.get("/api/export/txt")

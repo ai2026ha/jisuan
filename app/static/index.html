@@ -79,7 +79,7 @@ function renderAll(){
  $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
  renderAgentTable();renderGameTable();renderRateTable();renderDashboard();renderSelectedAgent();updateFormulaHint()
 }
-function agentBill(agentId){return historyRows.filter(x=>x.agent_id==agentId)}
+function agentBill(agentId){return historyRows.filter(x=>x.agent_id==agentId && !x.cleared)}
 
 let clearMode=false;
 function toggleClearMode(){
