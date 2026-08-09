@@ -91,6 +91,9 @@ class Calculation(Base):
     formula_result = Column(Numeric(18, 6), nullable=False)
     result = Column(Numeric(18, 6), nullable=False)
     cleared = Column(Boolean, default=False, nullable=False)
+    agent_name_snapshot = Column(String(120), nullable=True)
+    game_name_snapshot = Column(String(120), nullable=True)
+    formula_snapshot = Column(String(255), nullable=True)
 
 Base.metadata.create_all(engine)
 
@@ -108,6 +111,20 @@ def ensure_agent_note_column():
         pass
 
 ensure_agent_note_column()
+
+try:
+    with engine.begin() as conn:
+        if DATABASE_URL:
+            conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS agent_name_snapshot VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS game_name_snapshot VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS formula_snapshot VARCHAR(255)"))
+        else:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(calculations)")).fetchall()]
+            for name in ["agent_name_snapshot","game_name_snapshot","formula_snapshot"]:
+                if name not in cols:
+                    conn.execute(text(f"ALTER TABLE calculations ADD COLUMN {name} VARCHAR(255)"))
+except Exception:
+    pass
 
 # 兼容已有生产数据库：增加代理人工调整金额字段
 try:
@@ -299,8 +316,6 @@ async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_de
     require_user(request, db)
     agent = db.get(Agent, agent_id)
     if not agent: raise HTTPException(404, "代理不存在")
-    if db.scalar(select(Calculation).where(Calculation.agent_id == agent_id)):
-        raise HTTPException(400, "该代理已有历史计算记录，不能直接删除；建议保留代理以保证历史数据完整")
     db.delete(agent); db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
@@ -389,7 +404,10 @@ async def calculate(request: Request, agent_id: int = Form(...), game_id: int = 
     result = business_round(raw_result)
     agent.total = Decimal(agent.total or 0) + result
     db.add(Calculation(user_id=user.id, agent_id=agent.id, game_id=game.id, rate_id=rate.id,
-                       formula_no=formula_no, input_number=n, formula_result=formula_result, result=result))
+                       formula_no=formula_no, input_number=n, formula_result=formula_result, result=result,
+                       agent_name_snapshot=agent.name,
+                       game_name_snapshot=game.name,
+                       formula_snapshot=f"公式{formula_no}"))
     db.commit()
     await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "formula_result": float(formula_result), "result": float(result), "total": float(agent.total)}
@@ -421,9 +439,9 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
     rows = db.execute(q).all()
     fixed = {1:"0.94×0.5", 2:"0.94×0.55", 3:"0.94×0.45"}
     return [{"id": c.id, "time": beijing_time(c.created_at).strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
-             "agent": an or "", "game": gn or "", "rate": rn or "", "formula": c.formula_no, "input": float(c.input_number),
+             "agent": c.agent_name_snapshot or an or "", "game": c.game_name_snapshot or gn or "", "rate": rn or "", "formula": c.formula_no, "input": float(c.input_number),
              "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
-             "expression": f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
+             "expression": c.formula_snapshot or f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
             for c, an, gn, rn, rv, un in rows]
 
 @app.get("/api/export/txt")
