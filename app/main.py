@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, W
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, ForeignKey, select, func
+from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, ForeignKey, select, func, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
 from starlette.middleware.sessions import SessionMiddleware
@@ -82,6 +82,21 @@ class Calculation(Base):
     result = Column(Numeric(18, 6), nullable=False)
 
 Base.metadata.create_all(engine)
+
+# 兼容已有生产数据库：为旧 agents 表补充备注字段
+def ensure_agent_note_column():
+    try:
+        with engine.begin() as conn:
+            if DATABASE_URL:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN IF NOT EXISTS note VARCHAR(500) DEFAULT ''"))
+            else:
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(agents)")).fetchall()]
+                if "note" not in cols:
+                    conn.execute(text("ALTER TABLE agents ADD COLUMN note VARCHAR(500) DEFAULT ''"))
+    except Exception:
+        pass
+
+ensure_agent_note_column()
 
 def seed():
     db = SessionLocal()
