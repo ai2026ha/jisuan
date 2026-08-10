@@ -39,9 +39,11 @@ Base = declarative_base()
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def business_round(value: Decimal) -> Decimal:
-    """业务取整：小数第一位 >= 4 取整数；小数第一位 < 4，整数减 1。"""
+    """业务取整：未满100直接去掉小数取整数；满100后沿用原规则（首位小数>=4取整数，否则整数减1）。"""
     value = Decimal(value)
     integer = int(value)
+    if value < Decimal("100"):
+        return Decimal(integer)
     first_decimal = int((abs(value) - abs(integer)) * 10)
     return Decimal(integer if first_decimal >= 4 else integer - 1)
 
@@ -227,9 +229,11 @@ def seed():
 seed()
 
 def business_round(value: Decimal) -> int:
-    """业务取整：小数第一位 >= 4 取整数；< 4 则整数减 1。"""
+    """业务取整：未满100直接去掉小数取整数；满100后沿用原规则（首位小数>=4取整数，否则整数减1）。"""
     d = Decimal(str(value))
     integer = int(d)
+    if d < Decimal("100"):
+        return integer
     fraction_first = int((abs(d) - abs(integer)) * 10)
     return integer if fraction_first >= 4 else integer - 1
 
