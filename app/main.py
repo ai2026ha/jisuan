@@ -574,5 +574,5 @@ def export_txt(request: Request, db: Session = Depends(db_dep)):
         ))
         if has_today:
             lines.append(f"{a.name}    {format(Decimal(a.total), 'f').rstrip('0').rstrip('.')}")
-    content = "\n".join(lines) + ("\n" if lines else "")
+    content = "\n\n".join(lines) + ("\n" if lines else "")
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8", headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(f'结算{today}.txt')}"})
