@@ -347,6 +347,27 @@ async def add_agent(request: Request, name: str = Form(...), db: Session = Depen
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}
 
+@app.put("/api/agents/{agent_id}/name")
+async def update_agent_name(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    agent = db.get(Agent, agent_id)
+    if not agent or agent.is_deleted:
+        raise HTTPException(404, "代理不存在")
+    name = str(payload.get("name", "") or "").strip()
+    if not name:
+        raise HTTPException(400, "代理名不能为空")
+    if len(name) > 120:
+        raise HTTPException(400, "代理名不能超过120个字符")
+    if name == agent.name:
+        return {"ok": True, "name": agent.name}
+    exists = db.scalar(select(Agent).where(Agent.name == name, Agent.id != agent_id))
+    if exists:
+        raise HTTPException(400, "代理名称已存在")
+    agent.name = name
+    db.commit()
+    await ws_manager.broadcast("agent_updated")
+    return {"ok": True, "name": agent.name}
+
 @app.put("/api/agents/{agent_id}/note")
 async def update_agent_note(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)

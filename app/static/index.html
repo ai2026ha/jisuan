@@ -212,10 +212,22 @@ if(keepPage && $(keepPage)) tab(keepPage);
 }
 $('game').onchange=updateFormulaHint;$('agent').onchange=renderSelectedAgent;
 async function addAgent(){let fd=new FormData();fd.append('name',$('newAgent').value);try{await api('/api/agents',{method:'POST',body:fd});$('newAgent').value='';await load()}catch(e){alert(e.message)}}
+async function editAgent(id){
+ const a=data.agents.find(x=>x.id===id);
+ if(!a)return;
+ const name=prompt('编辑代理名称：',a.name);
+ if(name===null)return;
+ const value=name.trim();
+ if(!value)return alert('代理名不能为空');
+ try{
+  await api('/api/agents/'+id+'/name',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:value})});
+  await load();
+ }catch(e){alert(e.message)}
+}
 async function delAgent(id){if(!confirm('确定删除该代理？'))return;try{await api('/api/agents/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
 function selectEligible(){document.querySelectorAll('.agentCheck').forEach(c=>c.checked=+c.dataset.total>=50)}
 async function clearAgents(){let ids=[...document.querySelectorAll('.agentCheck:checked')].map(x=>x.value);if(!ids.length)return alert('请先选择代理');if(!confirm('确定清零选中代理？历史记录不会删除。'))return;let fd=new FormData();ids.forEach(id=>fd.append('agent_ids',id));try{await api('/api/agents/clear',{method:'POST',body:fd});await load()}catch(e){alert(e.message)}}
-function renderAgentTable(){$('agentTable').innerHTML='<table><thead><tr><th>代理</th><th>操作</th></tr></thead><tbody>'+data.agents.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td><button class="danger" onclick="delAgent(${a.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
+function renderAgentTable(){$('agentTable').innerHTML='<table><thead><tr><th>代理</th><th>操作</th></tr></thead><tbody>'+data.agents.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td><button type="button" onclick="editAgent(${a.id})">编辑</button> <button class="danger" onclick="delAgent(${a.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
 async function addGame(){let fd=new FormData();fd.append('name',$('newGame').value);fd.append('formula_choice',document.querySelector('input[name="fc"]:checked').value);try{await api('/api/games',{method:'POST',body:fd});$('newGame').value='';await load()}catch(e){alert(e.message)}}
 async function delGame(id){if(!confirm('确定删除？已有历史记录的游戏不能删除。'))return;try{await api('/api/games/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
 function renderGameTable(){$('gameTable').innerHTML='<table><thead><tr><th>游戏名</th><th>绑定规则</th><th>操作</th></tr></thead><tbody>'+data.games.map(g=>`<tr><td><b>${esc(g.name)}</b></td><td><span class="badge">固定公式${g.formula_choice}</span></td><td><button class="danger" onclick="delGame(${g.id})">删除</button></td></tr>`).join('')+'</tbody></table>'}
