@@ -562,17 +562,15 @@ async def clear_history(request: Request, db: Session = Depends(db_dep)):
 def export_txt(request: Request, db: Session = Depends(db_dep)):
     require_user(request, db)
     today = date.today()
-    start = datetime.combine(today, datetime.min.time())
-    end = datetime.combine(today, datetime.max.time())
-    agents = db.scalars(select(Agent).where(Agent.is_deleted == False, Agent.total >= Decimal("50")).order_by(Agent.sort_order.asc(), Agent.id.asc())).all()
-    lines = []
-    for a in agents:
-        has_today = db.scalar(select(func.count(Calculation.id)).where(
-            Calculation.agent_id == a.id,
-            Calculation.created_at >= start,
-            Calculation.created_at <= end
-        ))
-        if has_today:
-            lines.append(f"{a.name}    {format(Decimal(a.total), 'f').rstrip('0').rstrip('.')}")
+    # TXT 按代理管理/控制台当前显示的代理总金额导出；未满 50 的代理不导出。
+    agents = db.scalars(
+        select(Agent)
+        .where(Agent.is_deleted == False, Agent.total >= Decimal("50"))
+        .order_by(Agent.sort_order.asc(), Agent.id.asc())
+    ).all()
+    lines = [
+        f"{a.name}    {format(Decimal(a.total), 'f').rstrip('0').rstrip('.')}"
+        for a in agents
+    ]
     content = "\n\n".join(lines) + ("\n" if lines else "")
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8", headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(f'结算{today}.txt')}"})
