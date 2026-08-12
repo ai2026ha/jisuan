@@ -102,6 +102,18 @@ class Calculation(Base):
     game_name_snapshot = Column(String(120), nullable=True)
     formula_snapshot = Column(String(255), nullable=True)
 
+class ManualAdjustment(Base):
+    __tablename__ = "manual_adjustments"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    input_value = Column(String(80), nullable=False)
+    old_total = Column(Numeric(18, 4), nullable=False)
+    new_total = Column(Numeric(18, 4), nullable=False)
+    delta = Column(Numeric(18, 4), nullable=False)
+    cleared = Column(Boolean, default=False, nullable=False)
+
 Base.metadata.create_all(engine)
 
 # 兼容已有生产数据库：补充软删除字段
@@ -385,7 +397,7 @@ async def update_agent_note(agent_id: int, payload: dict, request: Request, db: 
 
 @app.put("/api/agents/{agent_id}/adjust")
 async def adjust_agent_total(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
-    require_user(request, db)
+    user = require_user(request, db)
     agent = db.get(Agent, agent_id)
     if not agent:
         raise HTTPException(404, "代理不存在")
@@ -394,18 +406,48 @@ async def adjust_agent_total(agent_id: int, payload: dict, request: Request, db:
         old_total = Decimal(agent.total or 0)
         if value.startswith("+") or value.startswith("-"):
             delta = Decimal(value)
+            new_total = old_total + delta
             agent.manual_adjust = Decimal(agent.manual_adjust or 0) + delta
-            agent.total = old_total + delta
+            agent.total = new_total
         else:
             new_total = Decimal(value)
             delta = new_total - old_total
             agent.manual_adjust = Decimal(agent.manual_adjust or 0) + delta
             agent.total = new_total
+        db.add(ManualAdjustment(
+            user_id=user.id, agent_id=agent.id, input_value=value,
+            old_total=old_total, new_total=new_total, delta=delta
+        ))
         db.commit()
     except Exception:
+        db.rollback()
         raise HTTPException(400, "金额格式错误")
     await ws_manager.broadcast("agent_updated")
     return {"ok": True, "total": float(agent.total)}
+
+@app.get("/api/manual-adjustments")
+def manual_adjustments(request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    rows = db.scalars(select(ManualAdjustment).order_by(ManualAdjustment.created_at.desc())).all()
+    result = []
+    for r in rows:
+        input_value = str(r.input_value or "")
+        if input_value.startswith("+") or input_value.startswith("-"):
+            detail = f"{input_value}（{Decimal(r.old_total):g} → {Decimal(r.new_total):g}）"
+        else:
+            detail = f"调整至 {Decimal(r.new_total):g}（{Decimal(r.old_total):g} → {Decimal(r.new_total):g}）"
+        result.append({
+            "id": r.id,
+            "time": beijing_time(r.created_at).strftime("%Y-%m-%d %H:%M:%S"),
+            "agent_id": r.agent_id,
+            "record_type": "manual",
+            "title": "手动调整",
+            "detail": detail,
+            "delta": float(r.delta),
+            "new_total": float(r.new_total),
+            "cleared": bool(r.cleared),
+        })
+    return result
 
 @app.delete("/api/agents/{agent_id}")
 async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):
@@ -427,6 +469,8 @@ async def clear_agents(request: Request, agent_ids: list[int] = Form(...), db: S
             a.manual_adjust = Decimal("0")
         for c in db.scalars(select(Calculation).where(Calculation.agent_id == aid, Calculation.cleared == False)).all():
             c.cleared = True
+        for m in db.scalars(select(ManualAdjustment).where(ManualAdjustment.agent_id == aid, ManualAdjustment.cleared == False)).all():
+            m.cleared = True
     db.commit()
     await ws_manager.broadcast("agent_updated")
     return {"ok": True}

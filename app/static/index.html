@@ -62,7 +62,7 @@
 <div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button class="primary" onclick="clearHistory()">清除历史</button><button class="primary" onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div id="historyTable"></div></div></section>
 </main></div>
 <script>
-let data={agents:[],games:[],rates:[]},historyRows=[],allHistoryRows=[],activeHistoryRows=[];
+let data={agents:[],games:[],rates:[]},historyRows=[],allHistoryRows=[],activeHistoryRows=[],manualAdjustmentRows=[];
 let currentPage='dashboard';
 const $=id=>document.getElementById(id);
 function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); return String(n);} 
@@ -79,7 +79,11 @@ function renderAll(){
  $('historyAgent').innerHTML='<option value="">全部代理</option>'+data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
  renderAgentTable();renderGameTable();renderRateTable();renderDashboard();renderSelectedAgent();updateFormulaHint()
 }
-function agentBill(agentId){return activeHistoryRows.filter(x=>x.agent_id==agentId)}
+function agentBill(agentId){
+ const calcRows=activeHistoryRows.filter(x=>x.agent_id==agentId).map(x=>({...x,record_type:'calculation'}));
+ const manualRows=manualAdjustmentRows.filter(x=>x.agent_id==agentId&&!x.cleared);
+ return calcRows.concat(manualRows).sort((a,b)=>String(b.time||'').localeCompare(String(a.time||'')));
+}
 
 let clearMode=false;
 function toggleClearMode(){
@@ -108,7 +112,7 @@ async function executeClear(){
 function renderDashboard(){
  $('statAgents').textContent=data.agents.length;
  $('statTotal').textContent=fmtNum(data.agents.reduce((s,a)=>s+a.total,0));
- api('/api/history').then(rows=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=activeHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
+ Promise.all([api('/api/history'),api('/api/manual-adjustments')]).then(([rows,manualRows])=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared); manualAdjustmentRows=manualRows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=activeHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
 }
 function editAgentNote(id,current){
  let n=prompt("请输入备注：", current||"");
@@ -167,7 +171,13 @@ function fmtExpression(v){
  return String(v).replace(/\d+(?:\.\d+)?/g,function(x){return fmtNum(x);});
 }
 function deleteHistory(id){ if(!confirm("确定删除该计算记录？")) return; api('/api/history/delete/'+id,{method:'DELETE'}).then(()=>load()); }
-function entryHtml(x){return `<div class="entry"><div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)} <button type="button" onclick="event.stopPropagation();deleteHistory(${x.id})">删除</button></div></div>`}
+function entryHtml(x){
+ const d=esc(String(x.time||'').slice(0,10));
+ if(x.record_type==='manual'){
+   return `<div class="entry"><div><div class="subtitle" style="margin-bottom:4px">计算日期：${d}</div><div class="entry-title">手动调整</div><div class="expr">${esc(x.detail||'')}</div></div><div class="entry-result">总额 ${fmtNum(x.new_total)}</div></div>`;
+ }
+ return `<div class="entry"><div><div class="subtitle" style="margin-bottom:4px">计算日期：${d}</div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)} <button type="button" onclick="event.stopPropagation();deleteHistory(${x.id})">删除</button></div></div>`
+}
 function renderSelectedAgent(){let id=+$('agent').value,a=data.agents.find(x=>x.id==id),rows=agentBill(id);$('selectedAgentBill').innerHTML=a?`<div class="total" style="margin-bottom:10px">${a.name} · ${fmtNum(a.total)}</div>`+(rows.length?rows.slice(0,10).map(entryHtml).join(''):'<div class="empty">暂无记录</div>'):'<div class="empty">暂无代理</div>'}
 function saveSelectState(){
  window.__selectState={
