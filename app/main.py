@@ -431,11 +431,14 @@ def manual_adjustments(request: Request, db: Session = Depends(db_dep)):
     rows = db.scalars(select(ManualAdjustment).order_by(ManualAdjustment.created_at.desc())).all()
     result = []
     for r in rows:
-        input_value = str(r.input_value or "")
-        if input_value.startswith("+") or input_value.startswith("-"):
-            detail = f"{input_value}（{Decimal(r.old_total):g} → {Decimal(r.new_total):g}）"
-        else:
-            detail = f"调整至 {Decimal(r.new_total):g}（{Decimal(r.old_total):g} → {Decimal(r.new_total):g}）"
+        old_total = Decimal(r.old_total or 0)
+        new_total = Decimal(r.new_total or 0)
+        delta = Decimal(r.delta or 0)
+        sign = "+" if delta >= 0 else "-"
+        old_text = format(old_total.normalize(), "f")
+        delta_text = format(abs(delta).normalize(), "f")
+        new_text = format(new_total.normalize(), "f")
+        detail = f"{old_text}{sign}{delta_text}={new_text}"
         result.append({
             "id": r.id,
             "time": beijing_time(r.created_at).strftime("%Y-%m-%d %H:%M:%S"),
@@ -443,11 +446,32 @@ def manual_adjustments(request: Request, db: Session = Depends(db_dep)):
             "record_type": "manual",
             "title": "手动调整",
             "detail": detail,
-            "delta": float(r.delta),
-            "new_total": float(r.new_total),
+            "delta": float(delta),
+            "old_total": float(old_total),
+            "new_total": float(new_total),
             "cleared": bool(r.cleared),
         })
     return result
+
+@app.delete("/api/manual-adjustments/{adjustment_id}")
+async def delete_manual_adjustment(adjustment_id: int, request: Request, db: Session = Depends(db_dep)):
+    require_user(request, db)
+    row = db.get(ManualAdjustment, adjustment_id)
+    if not row:
+        raise HTTPException(404, "手动调整记录不存在")
+
+    agent = db.get(Agent, row.agent_id)
+    if agent:
+        delta = Decimal(row.delta or 0)
+        # 撤销这一笔人工调整。若之后没有其他金额变化，金额会精确恢复到该记录的原总额；
+        # 若之后已有新计算/新调整，则只撤销本次差额，避免抹掉后续生成的数据。
+        agent.total = Decimal(agent.total or 0) - delta
+        agent.manual_adjust = Decimal(agent.manual_adjust or 0) - delta
+
+    db.delete(row)
+    db.commit()
+    await ws_manager.broadcast("agent_updated")
+    return {"ok": True, "total": float(agent.total) if agent else 0}
 
 @app.delete("/api/agents/{agent_id}")
 async def del_agent(agent_id: int, request: Request, db: Session = Depends(db_dep)):

@@ -171,10 +171,32 @@ function fmtExpression(v){
  return String(v).replace(/\d+(?:\.\d+)?/g,function(x){return fmtNum(x);});
 }
 function deleteHistory(id){ if(!confirm("确定删除该计算记录？")) return; api('/api/history/delete/'+id,{method:'DELETE'}).then(()=>load()); }
+function deleteManualAdjustment(id){
+ if(!confirm("确定删除这条手动调整记录？删除后会撤销这一次金额调整。")) return;
+ api('/api/manual-adjustments/'+id,{method:'DELETE'}).then(()=>load());
+}
+function fmtManualInt(v){
+ const n=Number(v);
+ if(!Number.isFinite(n)) return String(v);
+ return String(Math.trunc(n));
+}
+function signedAmount(v){
+ const n=Number(v);
+ if(!Number.isFinite(n)) return String(v);
+ const i=Math.trunc(n);
+ if(i>0) return '+'+i;
+ return String(i);
+}
+function manualDetail(x){
+ const oldNum=Number(x.old_total), deltaNum=Number(x.delta), newNum=Number(x.new_total);
+ if(!Number.isFinite(oldNum)||!Number.isFinite(deltaNum)||!Number.isFinite(newNum)) return String(x.detail||'');
+ const sign=deltaNum>=0?'+':'-';
+ return `${fmtManualInt(oldNum)}${sign}${fmtManualInt(Math.abs(deltaNum))}=${fmtManualInt(newNum)}`;
+}
 function entryHtml(x){
  const d=esc(String(x.time||'').slice(0,10));
  if(x.record_type==='manual'){
-   return `<div class="entry"><div><div class="subtitle" style="margin-bottom:4px">计算日期：${d}</div><div class="entry-title">手动调整</div><div class="expr">${esc(x.detail||'')}</div></div><div class="entry-result">总额 ${fmtNum(x.new_total)}</div></div>`;
+   return `<div class="entry"><div><div class="subtitle" style="margin-bottom:4px">计算日期：${d}</div><div class="entry-title">手动调整</div><div class="expr">${esc(manualDetail(x))}</div></div><div class="entry-result">${signedAmount(x.delta)} <button type="button" onclick="event.stopPropagation();deleteManualAdjustment(${x.id})">删除</button></div></div>`;
  }
  return `<div class="entry"><div><div class="subtitle" style="margin-bottom:4px">计算日期：${d}</div><div class="entry-title">${esc(x.game)}</div><div class="expr">${esc(fmtExpression(x.expression))}</div></div><div class="entry-result">+${fmtNum(x.result)} <button type="button" onclick="event.stopPropagation();deleteHistory(${x.id})">删除</button></div></div>`
 }
