@@ -18,7 +18,7 @@ from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, W
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, Boolean, ForeignKey, select, func, text
+from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, Boolean, ForeignKey, select, func, text, update
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
 from starlette.middleware.sessions import SessionMiddleware
@@ -398,7 +398,9 @@ async def update_agent_note(agent_id: int, payload: dict, request: Request, db: 
 @app.put("/api/agents/{agent_id}/adjust")
 async def adjust_agent_total(agent_id: int, payload: dict, request: Request, db: Session = Depends(db_dep)):
     user = require_user(request, db)
-    agent = db.get(Agent, agent_id)
+    # 与并发计算串行化：PostgreSQL 会锁定该代理行，避免手动调整覆盖正在提交的计算。
+    # SQLite 会忽略 FOR UPDATE，但单条写事务仍由数据库自身串行化。
+    agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
     if not agent:
         raise HTTPException(404, "代理不存在")
     value = str(payload.get("value", "")).strip()
@@ -463,13 +465,21 @@ async def delete_manual_adjustment(adjustment_id: int, request: Request, db: Ses
     agent = db.get(Agent, row.agent_id)
     if agent:
         delta = Decimal(row.delta or 0)
-        # 撤销这一笔人工调整。若之后没有其他金额变化，金额会精确恢复到该记录的原总额；
-        # 若之后已有新计算/新调整，则只撤销本次差额，避免抹掉后续生成的数据。
-        agent.total = Decimal(agent.total or 0) - delta
-        agent.manual_adjust = Decimal(agent.manual_adjust or 0) - delta
+        # 原子撤销这一笔人工调整，避免与其他设备同时计算时互相覆盖。
+        db.execute(
+            update(Agent)
+            .where(Agent.id == row.agent_id)
+            .values(
+                total=func.coalesce(Agent.total, Decimal("0")) - delta,
+                manual_adjust=func.coalesce(Agent.manual_adjust, Decimal("0")) - delta,
+            )
+            .execution_options(synchronize_session=False)
+        )
 
     db.delete(row)
     db.commit()
+    if agent:
+        db.refresh(agent)
     await ws_manager.broadcast("agent_updated")
     return {"ok": True, "total": float(agent.total) if agent else 0}
 
@@ -578,15 +588,30 @@ async def calculate(request: Request, agent_id: int = Form(...), game_id: int = 
         raise HTTPException(400, "汇率不能为0")
     raw_result = formula_result / Decimal(rate.value)
     result = business_round(raw_result)
-    agent.total = Decimal(agent.total or 0) + result
+    # 多设备并发安全：累计金额必须在数据库内原子递增。
+    # 不能使用“读取旧 total -> Python 相加 -> 写回”的方式，否则两台设备同时计算同一代理时
+    # 可能发生后提交覆盖先提交，导致少累计一笔。数据库 UPDATE 会对同一行串行化更新，
+    # 每一笔计算结果都会在提交时基于当时最新 total 继续累加。
+    result_decimal = Decimal(result)
+    updated = db.execute(
+        update(Agent)
+        .where(Agent.id == agent.id, Agent.is_deleted == False)
+        .values(total=func.coalesce(Agent.total, Decimal("0")) + result_decimal)
+        .execution_options(synchronize_session=False)
+    )
+    if updated.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, "代理状态已变化，请重新选择后再计算")
+
     db.add(Calculation(user_id=user.id, agent_id=agent.id, game_id=game.id, rate_id=rate.id,
-                       formula_no=formula_no, input_number=n, formula_result=formula_result, result=result,
+                       formula_no=formula_no, input_number=n, formula_result=formula_result, result=result_decimal,
                        agent_name_snapshot=agent.name,
                        game_name_snapshot=game.name,
                        formula_snapshot=f"{n}×{factor}×{multiplier}÷{rate.value}"))
     db.commit()
+    db.refresh(agent)
     await ws_manager.broadcast("calculation_updated")
-    return {"ok": True, "formula_result": float(formula_result), "result": float(result), "total": float(agent.total)}
+    return {"ok": True, "formula_result": float(formula_result), "result": float(result_decimal), "total": float(agent.total)}
 
 @app.delete("/api/history/delete/{calc_id}")
 async def delete_calculation(calc_id: int, request: Request, db: Session = Depends(db_dep)):
@@ -596,9 +621,17 @@ async def delete_calculation(calc_id: int, request: Request, db: Session = Depen
         raise HTTPException(404, "计算记录不存在")
     agent = db.get(Agent, c.agent_id)
     if agent:
-        agent.total = Decimal(agent.total or 0) - Decimal(c.result or 0)
+        # 原子扣回该计算结果；与其他设备同时新增计算也不会发生覆盖。
+        db.execute(
+            update(Agent)
+            .where(Agent.id == c.agent_id)
+            .values(total=func.coalesce(Agent.total, Decimal("0")) - Decimal(c.result or 0))
+            .execution_options(synchronize_session=False)
+        )
     db.delete(c)
     db.commit()
+    if agent:
+        db.refresh(agent)
     await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "total": float(agent.total) if agent else 0}
 
