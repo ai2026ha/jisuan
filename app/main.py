@@ -4,6 +4,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import quote
 import os
+import io
+import csv
+import json
+import zipfile
 from typing import Optional
 
 
@@ -14,23 +18,50 @@ def beijing_time(dt):
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(ZoneInfo("Asia/Shanghai"))
 
-from fastapi import FastAPI, Depends, Form, Request, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi import FastAPI, Depends, Form, File, UploadFile, Request, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, Column, Integer, String, Numeric, DateTime, Boolean, ForeignKey, select, func, text, update
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# Render 继续优先使用 DATABASE_URL。
+# 自建服务器 Docker Compose 改用分离的 DB_* / POSTGRES_* 环境变量构造 SQLAlchemy URL，
+# 避免数据库密码包含 @ / : # 等特殊字符时被连接字符串错误解析。
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
     elif DATABASE_URL.startswith("postgresql://"):
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    DB_CONNECT = DATABASE_URL
+elif os.getenv("DB_HOST", "").strip():
+    DB_CONNECT = URL.create(
+        drivername="postgresql+psycopg2",
+        username=os.getenv("DB_USER", os.getenv("POSTGRES_USER", "agent_calc")),
+        password=os.getenv("DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "")),
+        host=os.getenv("DB_HOST", "db"),
+        port=int(os.getenv("DB_PORT", "5432")),
+        database=os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "agent_calculator")),
+    )
+    # 现有代码以 DATABASE_URL 的真值判断 PostgreSQL / SQLite。
+    DATABASE_URL = "selfhost-postgresql"
+else:
+    DB_CONNECT = None
+
+if DB_CONNECT is not None:
+    engine = create_engine(
+        DB_CONNECT,
+        pool_pre_ping=True,
+        pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+    )
 else:
     DB_PATH = BASE_DIR.parent / "calculator.db"
     engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
@@ -273,7 +304,14 @@ class ConnectionManager:
 
 ws_manager = ConnectionManager()
 
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"), max_age=60*60*24*7)
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "0").strip().lower() in {"1", "true", "yes", "on"}
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"),
+    max_age=60*60*24*7,
+    same_site="lax",
+    https_only=SESSION_COOKIE_SECURE,
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "static"))
 
@@ -306,6 +344,18 @@ def require_user(request, db):
         raise HTTPException(status_code=401)
     return user
 
+def require_admin(request, db):
+    user = require_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可执行此操作")
+    return user
+
+@app.get("/healthz")
+def healthz(db: Session = Depends(db_dep)):
+    # Docker / Nginx / 监控系统可用此接口确认应用和数据库都可用。
+    db.execute(text("SELECT 1"))
+    return {"ok": True, "database": "postgresql" if DATABASE_URL else "sqlite"}
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(db_dep)):
     if not current_user(request, db):
@@ -331,8 +381,9 @@ def logout(request: Request):
 
 @app.get("/api/bootstrap")
 def bootstrap(request: Request, db: Session = Depends(db_dep)):
-    require_user(request, db)
+    user = require_user(request, db)
     return {
+        "current_user": {"id": user.id, "username": user.username, "role": user.role},
         "agents": [{"id": a.id, "name": a.name, "total": float(a.total or 0), "note": a.note or "", "sort_order": int(a.sort_order or a.id)} for a in db.scalars(select(Agent).where(Agent.is_deleted == False).order_by(Agent.sort_order.asc(), Agent.id.asc())).all()],
         "games": [{"id": g.id, "name": g.name, "formula_choice": g.formula_choice,
                    "factor": float(g.factor), "f1": float(g.formula1), "f2": float(g.formula2), "f3": float(g.formula3)}
@@ -662,6 +713,337 @@ async def clear_history(request: Request, db: Session = Depends(db_dep)):
     db.commit()
     await ws_manager.broadcast("calculation_updated")
     return {"ok": True, "deleted": deleted}
+
+def _backup_value(value):
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        # 金额/汇率使用字符串，避免 JSON 浮点精度损失。
+        return format(value, "f")
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+def _dump_model_rows(db: Session, model):
+    """仅导出当前有效数据：排除软删除记录、已清零历史及依赖已删除对象的历史。"""
+    columns = [column.name for column in model.__table__.columns]
+    stmt = select(model)
+    if hasattr(model, "is_deleted"):
+        stmt = stmt.where(model.is_deleted.is_(False))
+    if hasattr(model, "cleared"):
+        stmt = stmt.where(model.cleared.is_(False))
+    if model is Calculation:
+        stmt = (stmt
+                .join(Agent, Calculation.agent_id == Agent.id)
+                .join(Game, Calculation.game_id == Game.id)
+                .join(Rate, Calculation.rate_id == Rate.id)
+                .where(Agent.is_deleted.is_(False), Game.is_deleted.is_(False), Rate.is_deleted.is_(False)))
+    elif model is ManualAdjustment:
+        stmt = (stmt
+                .join(Agent, ManualAdjustment.agent_id == Agent.id)
+                .where(Agent.is_deleted.is_(False)))
+    rows = db.scalars(stmt.order_by(model.id.asc())).all()
+    return columns, [
+        {column: _backup_value(getattr(row, column)) for column in columns}
+        for row in rows
+    ]
+
+BACKUP_MODELS = [
+    ("users", User),
+    ("agents", Agent),
+    ("games", Game),
+    ("rates", Rate),
+    ("calculations", Calculation),
+    ("manual_adjustments", ManualAdjustment),
+]
+BACKUP_MODEL_MAP = dict(BACKUP_MODELS)
+BACKUP_UPLOAD_MAX_BYTES = int(os.getenv("BACKUP_UPLOAD_MAX_MB", "100")) * 1024 * 1024
+BACKUP_JSON_MAX_BYTES = int(os.getenv("BACKUP_JSON_MAX_MB", "300")) * 1024 * 1024
+
+
+def _backup_error(message: str, status_code: int = 400):
+    raise HTTPException(status_code=status_code, detail=message)
+
+
+def _validate_backup_bytes(raw: bytes):
+    """读取并严格校验网页导出的当前数据 ZIP，不解压到磁盘。"""
+    if not raw:
+        _backup_error("备份文件为空")
+    if len(raw) > BACKUP_UPLOAD_MAX_BYTES:
+        _backup_error(f"备份 ZIP 超过上传上限 {BACKUP_UPLOAD_MAX_BYTES // 1024 // 1024} MB", 413)
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as zf:
+            try:
+                info = zf.getinfo("all_data.json")
+            except KeyError:
+                _backup_error("不是有效备份：缺少 all_data.json")
+            if info.flag_bits & 0x1:
+                _backup_error("不支持加密 ZIP")
+            if info.file_size > BACKUP_JSON_MAX_BYTES:
+                _backup_error(f"all_data.json 超过解析上限 {BACKUP_JSON_MAX_BYTES // 1024 // 1024} MB", 413)
+            payload = json.loads(zf.read(info).decode("utf-8"))
+    except HTTPException:
+        raise
+    except (zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError):
+        _backup_error("备份文件损坏或格式不正确")
+
+    if not isinstance(payload, dict):
+        _backup_error("备份内容格式错误")
+    manifest = payload.get("manifest") or {}
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        _backup_error("备份缺少 data 数据区")
+    if int(manifest.get("format_version") or 0) != 1:
+        _backup_error("备份版本不支持，请使用本系统导出的当前数据 ZIP")
+
+    counts = {}
+    id_sets = {}
+    normalized = {}
+    for table_name, model in BACKUP_MODELS:
+        rows = data.get(table_name)
+        if not isinstance(rows, list):
+            _backup_error(f"备份缺少数据表：{table_name}")
+        allowed_columns = {column.name for column in model.__table__.columns}
+        required_columns = {column.name for column in model.__table__.columns if not column.nullable and column.default is None}
+        required_columns.add("id")
+        seen_ids = set()
+        normalized_rows = []
+        for idx, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                _backup_error(f"{table_name} 第 {idx} 条记录格式错误")
+            unknown = set(row) - allowed_columns
+            if unknown:
+                _backup_error(f"{table_name} 包含未知字段：{', '.join(sorted(unknown))}")
+            missing = required_columns - set(row)
+            if missing:
+                _backup_error(f"{table_name} 缺少必要字段：{', '.join(sorted(missing))}")
+            try:
+                row_id = int(row.get("id"))
+            except (TypeError, ValueError):
+                _backup_error(f"{table_name} 第 {idx} 条记录 ID 无效")
+            if row_id <= 0 or row_id in seen_ids:
+                _backup_error(f"{table_name} 存在无效或重复 ID：{row_id}")
+            seen_ids.add(row_id)
+            if "is_deleted" in row and row.get("is_deleted") not in (False, 0, None):
+                _backup_error(f"{table_name} 含已删除数据，按当前备份规则禁止导入")
+            if "cleared" in row and row.get("cleared") not in (False, 0, None):
+                _backup_error(f"{table_name} 含已清零历史，按当前备份规则禁止导入")
+
+            converted = {}
+            for column in model.__table__.columns:
+                if column.name not in row:
+                    continue
+                value = row.get(column.name)
+                if value is None:
+                    converted[column.name] = None
+                elif isinstance(column.type, DateTime):
+                    try:
+                        converted[column.name] = datetime.fromisoformat(str(value))
+                    except ValueError:
+                        _backup_error(f"{table_name}.{column.name} 时间格式无效")
+                elif isinstance(column.type, Numeric):
+                    try:
+                        converted[column.name] = Decimal(str(value))
+                    except Exception:
+                        _backup_error(f"{table_name}.{column.name} 数值格式无效")
+                elif isinstance(column.type, Integer):
+                    try:
+                        converted[column.name] = int(value)
+                    except (TypeError, ValueError):
+                        _backup_error(f"{table_name}.{column.name} 整数格式无效")
+                elif isinstance(column.type, Boolean):
+                    if value not in (True, False, 0, 1):
+                        _backup_error(f"{table_name}.{column.name} 布尔值无效")
+                    converted[column.name] = bool(value)
+                else:
+                    converted[column.name] = str(value)
+            normalized_rows.append(converted)
+
+        counts[table_name] = len(rows)
+        id_sets[table_name] = seen_ids
+        normalized[table_name] = normalized_rows
+
+    if not id_sets["users"]:
+        _backup_error("备份中没有账号，恢复后将无法登录")
+    if not any(str(row.get("role", "")) == "admin" for row in data["users"]):
+        _backup_error("备份中没有管理员账号，恢复后将无法管理系统")
+
+    # 外键完整性：当前数据备份必须能独立恢复，不能引用已删除而未导出的父记录。
+    for row in data["calculations"]:
+        refs = [
+            ("user_id", "users"),
+            ("agent_id", "agents"),
+            ("game_id", "games"),
+            ("rate_id", "rates"),
+        ]
+        for field, parent in refs:
+            try:
+                ref_id = int(row.get(field))
+            except (TypeError, ValueError):
+                _backup_error(f"calculations.{field} 无效")
+            if ref_id not in id_sets[parent]:
+                _backup_error(f"备份存在无法恢复的关联：calculations.{field}={ref_id} 不在 {parent} 中")
+    for row in data["manual_adjustments"]:
+        for field, parent in [("user_id", "users"), ("agent_id", "agents")]:
+            try:
+                ref_id = int(row.get(field))
+            except (TypeError, ValueError):
+                _backup_error(f"manual_adjustments.{field} 无效")
+            if ref_id not in id_sets[parent]:
+                _backup_error(f"备份存在无法恢复的关联：manual_adjustments.{field}={ref_id} 不在 {parent} 中")
+
+    return manifest, normalized, counts
+
+
+def _replace_database_from_backup(normalized):
+    """单事务覆盖六张业务表；失败自动整体回滚。"""
+    child_first = [ManualAdjustment, Calculation, Rate, Game, Agent, User]
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            # 防止两次恢复操作并发执行；固定 advisory lock 只用于本应用恢复任务。
+            conn.execute(text("SELECT pg_advisory_xact_lock(8675309001)"))
+            conn.execute(text(
+                "TRUNCATE TABLE manual_adjustments, calculations, rates, games, agents, users RESTART IDENTITY CASCADE"
+            ))
+        else:
+            for model in child_first:
+                conn.execute(model.__table__.delete())
+
+        for table_name, model in BACKUP_MODELS:
+            rows = normalized[table_name]
+            if rows:
+                conn.execute(model.__table__.insert(), rows)
+
+        if engine.dialect.name == "postgresql":
+            for table_name, _model in BACKUP_MODELS:
+                max_id = max((int(row["id"]) for row in normalized[table_name]), default=0)
+                seq = conn.execute(
+                    text("SELECT pg_get_serial_sequence(:table_name, 'id')"),
+                    {"table_name": table_name},
+                ).scalar()
+                if seq:
+                    conn.execute(
+                        text("SELECT setval(CAST(:seq AS regclass), :value, :called)"),
+                        {"seq": seq, "value": max(max_id, 1), "called": bool(max_id)},
+                    )
+
+
+@app.post("/api/import/preview")
+async def import_preview(
+    request: Request,
+    backup: UploadFile = File(...),
+    db: Session = Depends(db_dep),
+):
+    require_admin(request, db)
+    filename = (backup.filename or "").strip()
+    if filename and not filename.lower().endswith(".zip"):
+        _backup_error("请选择系统导出的 ZIP 备份文件")
+    raw = await backup.read(BACKUP_UPLOAD_MAX_BYTES + 1)
+    if len(raw) > BACKUP_UPLOAD_MAX_BYTES:
+        _backup_error(f"备份 ZIP 超过上传上限 {BACKUP_UPLOAD_MAX_BYTES // 1024 // 1024} MB", 413)
+    manifest, _normalized, counts = _validate_backup_bytes(raw)
+    return {
+        "ok": True,
+        "filename": filename or "backup.zip",
+        "size_bytes": len(raw),
+        "exported_at": manifest.get("exported_at"),
+        "source": manifest.get("source"),
+        "counts": counts,
+        "warning": "确认后将覆盖当前六张业务表；恢复成功后需要重新登录。",
+    }
+
+
+@app.post("/api/import/restore")
+async def import_restore(
+    request: Request,
+    backup: UploadFile = File(...),
+    confirm: str = Form(...),
+    db: Session = Depends(db_dep),
+):
+    require_admin(request, db)
+    if confirm != "REPLACE_CURRENT_DATA":
+        _backup_error("缺少覆盖确认，未执行恢复")
+    filename = (backup.filename or "").strip()
+    if filename and not filename.lower().endswith(".zip"):
+        _backup_error("请选择系统导出的 ZIP 备份文件")
+    raw = await backup.read(BACKUP_UPLOAD_MAX_BYTES + 1)
+    if len(raw) > BACKUP_UPLOAD_MAX_BYTES:
+        _backup_error(f"备份 ZIP 超过上传上限 {BACKUP_UPLOAD_MAX_BYTES // 1024 // 1024} MB", 413)
+    _manifest, normalized, counts = _validate_backup_bytes(raw)
+    # require_admin() 的 SELECT 会让当前 Session 保持一个读事务。先结束该事务，
+    # 否则 PostgreSQL TRUNCATE 等待本请求自己的 ACCESS SHARE 锁，会造成自锁。
+    db.rollback()
+    try:
+        _replace_database_from_backup(normalized)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _backup_error(f"恢复失败，数据库已自动回滚：{type(exc).__name__}", 500)
+
+    # 当前管理员可能已经被备份中的 users 表替换，主动退出当前会话，避免沿用旧身份。
+    request.session.clear()
+    await ws_manager.broadcast("database_restored")
+    return {"ok": True, "counts": counts, "message": "数据恢复完成，请重新登录"}
+
+@app.get("/api/export/all-data")
+def export_all_data(request: Request, db: Session = Depends(db_dep)):
+    """管理员导出当前有效数据库数据；兼容 Render DATABASE_URL 与自建 PostgreSQL。"""
+    admin = require_admin(request, db)
+
+    models = BACKUP_MODELS
+
+    all_data = {}
+    counts = {}
+    max_ids = {}
+    csv_files = {}
+    for table_name, model in models:
+        columns, rows = _dump_model_rows(db, model)
+        all_data[table_name] = rows
+        counts[table_name] = len(rows)
+        max_ids[table_name] = max((int(row["id"]) for row in rows if row.get("id") is not None), default=0)
+
+        sio = io.StringIO(newline="")
+        writer = csv.DictWriter(sio, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: "" if value is None else value for key, value in row.items()})
+        csv_files[table_name] = sio.getvalue()
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    manifest = {
+        "exported_at": now.isoformat(),
+        "source": "postgresql" if DATABASE_URL else "local_sqlite",
+        "database_name": os.getenv("DATABASE_NAME", "postgresql") if DATABASE_URL else "calculator.db",
+        "exported_by_user_id": admin.id,
+        "exported_by_username": admin.username,
+        "tables": counts,
+        "max_ids": max_ids,
+        "format_version": 1,
+    }
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr("all_data.json", json.dumps({"manifest": manifest, "data": all_data}, ensure_ascii=False, indent=2))
+        for table_name, content in csv_files.items():
+            zf.writestr(f"csv/{table_name}.csv", "\ufeff" + content)
+        zf.writestr(
+            "README.txt",
+            "这是代理计算中心的当前有效数据备份。\n"
+            "本文件直接从当前运行环境正在使用的 PostgreSQL 导出（兼容 Render 与自建服务器）。\n"
+            "包含 users、agents、games、rates、calculations、manual_adjustments 六张表的当前有效记录。\n"
+            "不包含 is_deleted=true 的已删除数据，也不包含 cleared=true 的已清零历史数据。\n"
+            "all_data.json 用于数据迁移/恢复；csv/ 目录方便人工查看。\n"
+            "注意：users 表包含密码哈希，请将此备份视为敏感文件并妥善保管。\n"
+        )
+    payload = buffer.getvalue()
+    filename = f"当前数据_{now.strftime('%Y%m%d_%H%M%S')}.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 @app.get("/api/export/txt")
 def export_txt(request: Request, db: Session = Depends(db_dep)):

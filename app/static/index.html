@@ -4,6 +4,7 @@
 <style>
 :root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#718096;--line:#e6ebf2;--primary:#315efb;--primary2:#2447c7;--green:#129c70;--red:#d64545;--shadow:0 8px 30px rgba(26,39,70,.07)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,"Microsoft YaHei",Arial,sans-serif}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:10}.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px}.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#315efb,#7b61ff);color:#fff;display:grid;place-items:center;font-weight:900}.user{display:flex;align-items:center;gap:12px;color:#667085}.wrap{display:flex;max-width:1500px;margin:auto;min-height:calc(100vh - 68px)}.side{width:220px;padding:24px 12px}.nav{display:flex;flex-direction:column;gap:5px}.nav button{border:0;background:transparent;text-align:left;padding:12px 14px;border-radius:10px;color:#667085;font-size:14px;cursor:pointer}.nav button.active,.nav button:hover{background:#edf2ff;color:var(--primary);font-weight:700}.main{flex:1;padding:25px 20px 50px}.page{display:none}.page.active{display:block}.title{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}.actionGroup{display:flex;align-items:center;gap:10px}.actionGroup .primary{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;margin-left:0!important;box-sizing:border-box;padding:10px 14px;border-radius:10px;border:1px solid var(--primary);background:var(--primary);color:#fff;font:inherit;cursor:pointer;height:40px}.title h1{font-size:25px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-top:6px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:18px}.stat,.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}.stat{padding:18px}.stat .label{font-size:13px;color:var(--muted)}.stat .num{font-size:25px;font-weight:800;margin-top:7px}.card{padding:20px}.calcgrid{display:grid;grid-template-columns:1fr 1.25fr;gap:18px}.row{display:flex;gap:12px;flex-wrap:wrap}.field{flex:1;min-width:150px}label{display:block;font-size:12px;color:#667085;margin-bottom:7px}input,select,button{font:inherit}input,select{width:100%;padding:11px 12px;border:1px solid #d8dfeb;border-radius:10px;background:#fff;outline:none}input:focus,select:focus{border-color:#7b8ff8;box-shadow:0 0 0 3px #315efb14}button{border:1px solid #d7deea;background:#fff;color:#344054;padding:10px 14px;border-radius:10px;cursor:pointer}.primary{background:var(--primary);border-color:var(--primary);color:#fff}.primary:hover{background:var(--primary2)}.danger{background:#fff3f3;color:#b42318;border-color:#ffd5d5}.wide{grid-column:1/-1}.formula-item{display:flex;align-items:center;gap:8px;min-height:30px}.formulaHint{margin-top:13px;padding:11px 12px;background:#f7f9fc;border-radius:10px;color:#667085;font-size:13px}.resultbox{margin-top:15px;padding:15px;background:#eefbf6;border:1px solid #ccefe2;border-radius:12px}.resultbox .big{font-size:24px;font-weight:800;color:var(--green)}.agent-card{padding:0;overflow:hidden;margin-bottom:14px}.agent-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:#fbfcfe;border-bottom:1px solid var(--line)}.agent-name{font-weight:800}.total{font-size:20px;font-weight:850}.entries{padding:5px 18px 14px}.entry{display:grid;grid-template-columns:1fr auto;gap:12px;padding:12px 0;border-bottom:1px dashed #e7ebf2}.entry:last-child{border-bottom:0}.entry-title{font-weight:700;color:#16845f}.expr{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#16845f;font-size:12px;margin-top:4px}.entry-result{font-weight:800;color:#16845f;align-self:center}.empty{padding:18px;color:#98a2b3;text-align:center}.toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{padding:11px 9px;border-bottom:1px solid #edf0f4;text-align:left;font-size:13px;white-space:nowrap}th{color:#667085;background:#fafbfc}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#315efb;font-size:12px;font-weight:700}.notice{padding:11px 13px;border-radius:10px;background:#f5f8ff;color:#3851a8;font-size:13px;margin:12px 0}.check{width:auto!important}.checkline{display:flex;align-items:center;gap:8px;font-size:13px}.gridform{display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.formulaChoice{display:flex;flex-direction:column;gap:8px;margin-top:7px}.formulaChoice label{display:flex;align-items:center;gap:8px;border:1px solid #dbe1ec;border-radius:10px;padding:11px;color:#344054;cursor:pointer;margin:0;min-height:42px}.formulaChoice input{width:auto;margin:0;flex:none}.dangerText{color:#b42318}.logout{padding:7px 10px}
+.restoreOverlay{position:fixed;inset:0;background:rgba(15,23,42,.46);display:none;align-items:center;justify-content:center;padding:18px;z-index:100}.restoreOverlay.show{display:flex}.restoreModal{width:min(620px,100%);background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(15,23,42,.24);padding:22px}.restoreModal h3{margin:0 0 8px;font-size:20px}.restoreMeta{margin:14px 0;padding:12px 14px;background:#f7f9fc;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.75}.restoreCounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:12px 0}.restoreCount{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}.restoreCount b{float:right}.restoreActions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}.adminOnly{display:none}
 @media(max-width:1050px){.side{width:175px}.calcgrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.gridform{grid-template-columns:1fr}}@media(max-width:700px){.top{padding:0 14px}.wrap{display:block}.side{width:auto;padding:10px 12px}.nav{flex-direction:row;overflow:auto}.nav button{white-space:nowrap}.main{padding:15px}.formulaChoice{grid-template-columns:1fr}.entry{grid-template-columns:1fr}.user span{display:none}}
 
 .agent-record{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid #e8e8e8;border-radius:10px;margin:8px 0;background:#fff}
@@ -24,12 +25,23 @@
 </nav></aside>
 <main class="main">
 <section id="dashboard" class="page active">
-<div class="title"><div><h1>当前概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><div class="actionGroup"><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button><button type="button" class="primary" onclick="toggleClearMode()">清零</button><a class="primary" href="/api/export/txt">⇩ 导出TXT</a></div></div>
+<div class="title"><div><h1>当前概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><div class="actionGroup"><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button><button type="button" class="primary" onclick="toggleClearMode()">清零</button><a class="primary" href="/api/export/txt">⇩ 导出TXT</a><a id="exportCurrentData" class="primary adminOnly" href="/api/export/all-data">⇩ 导出当前数据</a><button id="importCurrentData" type="button" class="primary adminOnly" onclick="chooseRestoreFile()">⇧ 上传数据</button><input id="restoreFile" type="file" accept=".zip,application/zip" hidden onchange="previewRestoreFile(this.files&&this.files[0])"></div></div>
 <div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">当前计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0</div></div></div>
 <div id="clearPanel" class="card" style="display:none;margin-bottom:15px">
 <div id="clearSummary" class="notice"></div>
 <button type="button" class="primary" onclick="executeClear()">执行清零</button>
 <button type="button" onclick="closeClearPanel()">取消清零</button>
+</div>
+<div id="restoreOverlay" class="restoreOverlay" onclick="if(event.target===this)closeRestoreModal()">
+  <div class="restoreModal">
+    <h3>上传数据 · 恢复预览</h3>
+    <div class="subtitle">只接受本系统“导出当前数据”生成的 ZIP。确认恢复后会覆盖当前数据库中的六张业务表。</div>
+    <div id="restoreMeta" class="restoreMeta"></div>
+    <div id="restoreCounts" class="restoreCounts"></div>
+    <div class="notice dangerText"><b>注意：</b>恢复会替换当前账号、代理、游戏、汇率、计算记录和人工调整。恢复成功后当前账号会退出，请使用备份中的账号重新登录。</div>
+    <div id="restoreMsg"></div>
+    <div class="restoreActions"><button type="button" onclick="closeRestoreModal()">取消</button><button id="restoreConfirmBtn" type="button" class="primary" onclick="confirmRestore()">确认覆盖并恢复</button></div>
+  </div>
 </div>
 <div id="dashboardAgents"></div>
 </section>
@@ -68,11 +80,63 @@ const $=id=>document.getElementById(id);
 function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); return String(n);} 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok){let msg=d.detail || d.message || JSON.stringify(d); throw Error(typeof msg==='string'?msg:JSON.stringify(msg));}return d}
+let restoreSelectedFile=null;
+function chooseRestoreFile(){
+ if(!(data.current_user&&data.current_user.role==='admin'))return alert('仅管理员可恢复数据');
+ $('restoreFile').value='';
+ $('restoreFile').click();
+}
+function formatBytes(n){
+ n=Number(n||0);if(n<1024)return n+' B';if(n<1024*1024)return (n/1024).toFixed(1)+' KB';return (n/1024/1024).toFixed(2)+' MB';
+}
+function closeRestoreModal(){
+ if(window.__restoreSubmitting)return;
+ $('restoreOverlay').classList.remove('show');
+ restoreSelectedFile=null;
+ $('restoreMsg').innerHTML='';
+}
+async function previewRestoreFile(file){
+ if(!file)return;
+ restoreSelectedFile=file;
+ const fd=new FormData();fd.append('backup',file);
+ try{
+  const d=await api('/api/import/preview',{method:'POST',body:fd});
+  const labels={users:'账号',agents:'代理',games:'游戏',rates:'汇率',calculations:'计算记录',manual_adjustments:'人工调整'};
+  $('restoreMeta').innerHTML=`<div><b>文件：</b>${esc(d.filename||file.name)}</div><div><b>大小：</b>${formatBytes(d.size_bytes)}</div><div><b>导出时间：</b>${esc(d.exported_at||'未记录')}</div><div><b>来源：</b>${esc(d.source||'未记录')}</div>`;
+  $('restoreCounts').innerHTML=Object.keys(labels).map(k=>`<div class="restoreCount">${labels[k]}<b>${Number((d.counts||{})[k]||0)}</b></div>`).join('');
+  $('restoreMsg').innerHTML='';
+  $('restoreConfirmBtn').disabled=false;
+  $('restoreOverlay').classList.add('show');
+ }catch(e){
+  restoreSelectedFile=null;
+  alert('备份校验失败：'+e.message);
+ }
+}
+async function confirmRestore(){
+ if(!restoreSelectedFile)return alert('请重新选择备份文件');
+ if(window.__restoreSubmitting)return;
+ window.__restoreSubmitting=true;
+ $('restoreConfirmBtn').disabled=true;
+ $('restoreMsg').innerHTML='<div class="notice">正在恢复数据，请不要关闭页面或重复提交。</div>';
+ const fd=new FormData();fd.append('backup',restoreSelectedFile);fd.append('confirm','REPLACE_CURRENT_DATA');
+ try{
+  const d=await api('/api/import/restore',{method:'POST',body:fd});
+  $('restoreMsg').innerHTML='<div class="notice">'+esc(d.message||'数据恢复完成')+'</div>';
+  alert('数据恢复完成。系统将退出当前账号，请使用备份中的账号重新登录。');
+  location.href='/login';
+ }catch(e){
+  window.__restoreSubmitting=false;
+  $('restoreConfirmBtn').disabled=false;
+  $('restoreMsg').innerHTML='<div class="notice dangerText">恢复失败：'+esc(e.message)+'</div>';
+ }
+}
 function tab(id,btn){currentPage=id;document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');if(id==='history')loadHistory();if(id==='dashboard')renderDashboard()}
 function formulaText(n){return ['','数字 × 0.94 × 0.50','数字 × 0.94 × 0.55','数字 × 0.94 × 0.45'][n]}
 function gameById(){return data.games.find(g=>g.id==+$('game').value)}
 function updateFormulaHint(){let g=gameById();$('formulaHint').textContent=g?`该游戏已绑定固定计算规则：${formulaText(g.formula_choice)} ÷ 汇率`:'请先选择游戏'}
 function renderAll(){
+ const isAdmin=data.current_user&&data.current_user.role==='admin';
+ document.querySelectorAll('.adminOnly').forEach(el=>el.style.display=isAdmin?'inline-flex':'none');
  $('agent').innerHTML=data.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
  $('game').innerHTML=data.games.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
  $('rate').innerHTML=data.rates.map(r=>`<option value="${r.id}">${esc(r.name)}（${fmtNum(r.value)}）</option>`).join('');
@@ -302,7 +366,13 @@ load();
         hasConnected = true;
       };
 
-      ws.onmessage = function(){
+      ws.onmessage = function(event){
+        if(event.data === 'database_restored'){
+          if(window.__restoreSubmitting) return;
+          alert('数据库已由管理员恢复，为避免使用旧会话，请重新登录。');
+          fetch('/logout',{method:'POST'}).finally(function(){ location.href='/login'; });
+          return;
+        }
         // load() 会保留当前页面；若当前在历史页，tab('history') 会同步执行 loadHistory()。
         load();
       };
