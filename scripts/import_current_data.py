@@ -31,6 +31,73 @@ def load_backup(path: Path):
     return payload
 
 
+
+
+def add_hidden_history_dependencies(data):
+    """为仍保留、但引用已删除对象的历史生成隐藏 FK 占位行。
+
+    备份本身不携带已删除对象；这些占位只在恢复目标库中生成，且 is_deleted=true，
+    不会重新出现在代理/游戏/汇率当前列表中。
+    """
+    ids = {table: {int(row["id"]) for row in data[table]} for table in TABLES}
+    agent_names = {str(row.get("name") or "") for row in data["agents"]}
+    game_names = {str(row.get("name") or "") for row in data["games"]}
+
+    def unique_name(prefix, row_id, used):
+        name = f"__{prefix}_{row_id}__"
+        while name in used:
+            name = "_" + name
+        used.add(name)
+        return name
+
+    def ensure(parent, row_id):
+        row_id = int(row_id)
+        if row_id in ids[parent]:
+            return
+        if parent == "agents":
+            data[parent].append({
+                "id": row_id,
+                "name": unique_name("history_deleted_agent", row_id, agent_names),
+                "total": "0",
+                "manual_adjust": "0",
+                "note": "",
+                "is_deleted": True,
+                "sort_order": row_id,
+            })
+        elif parent == "games":
+            data[parent].append({
+                "id": row_id,
+                "is_deleted": True,
+                "name": unique_name("history_deleted_game", row_id, game_names),
+                "factor": "0.94",
+                "formula1": "0.50",
+                "formula2": "0.55",
+                "formula3": "0.45",
+                "formula_choice": 1,
+            })
+        elif parent == "rates":
+            data[parent].append({
+                "id": row_id,
+                "is_deleted": True,
+                "name": "",
+                "value": "1",
+            })
+        else:
+            raise ValueError(f"无法生成历史关联占位: {parent} id={row_id}")
+        ids[parent].add(row_id)
+
+    for row in data["calculations"]:
+        if int(row["user_id"]) not in ids["users"]:
+            raise ValueError(f"计算历史引用不存在账号: user_id={row['user_id']}")
+        ensure("agents", row["agent_id"])
+        ensure("games", row["game_id"])
+        ensure("rates", row["rate_id"])
+
+    for row in data["manual_adjustments"]:
+        if int(row["user_id"]) not in ids["users"]:
+            raise ValueError(f"手动调整引用不存在账号: user_id={row['user_id']}")
+        ensure("agents", row["agent_id"])
+
 def main():
     parser = argparse.ArgumentParser(description="导入当前有效数据备份到 PostgreSQL")
     parser.add_argument("backup", help="网页导出的 当前数据_*.zip")
@@ -41,6 +108,7 @@ def main():
 
     payload = load_backup(Path(args.backup))
     data = payload["data"]
+    add_hidden_history_dependencies(data)
 
     if dsn:
         conn = psycopg2.connect(normalize_dsn(dsn))

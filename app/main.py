@@ -8,6 +8,7 @@ import io
 import csv
 import json
 import zipfile
+import hashlib
 from typing import Optional
 
 
@@ -132,6 +133,13 @@ class Calculation(Base):
     agent_name_snapshot = Column(String(120), nullable=True)
     game_name_snapshot = Column(String(120), nullable=True)
     formula_snapshot = Column(String(255), nullable=True)
+    # 是否参与当前代理余额。正常计算=True；“历史合并导入”=False，仅补历史，不改当前金额。
+    affects_total = Column(Boolean, default=True, nullable=False)
+    # 历史 CSV 合并去重键；正常在线计算为空。
+    history_import_key = Column(String(64), nullable=True)
+    user_name_snapshot = Column(String(80), nullable=True)
+    rate_name_snapshot = Column(String(120), nullable=True)
+    rate_value_snapshot = Column(Numeric(18, 8), nullable=True)
 
 class ManualAdjustment(Base):
     __tablename__ = "manual_adjustments"
@@ -230,6 +238,39 @@ try:
                 conn.execute(text("ALTER TABLE calculations ADD COLUMN cleared BOOLEAN DEFAULT 0"))
 except Exception:
     pass
+
+# 兼容已有生产数据库：增加历史合并导入所需字段。
+# affects_total 默认 TRUE，保证所有旧计算仍保持原来的余额行为；只有后续“合并导入历史”写入 FALSE。
+def ensure_history_merge_columns():
+    try:
+        with engine.begin() as conn:
+            if DATABASE_URL:
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS affects_total BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("UPDATE calculations SET affects_total = TRUE WHERE affects_total IS NULL"))
+                conn.execute(text("ALTER TABLE calculations ALTER COLUMN affects_total SET DEFAULT TRUE"))
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS history_import_key VARCHAR(64)"))
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS user_name_snapshot VARCHAR(80)"))
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS rate_name_snapshot VARCHAR(120)"))
+                conn.execute(text("ALTER TABLE calculations ADD COLUMN IF NOT EXISTS rate_value_snapshot NUMERIC(18,8)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_calculations_history_import_key ON calculations(history_import_key)"))
+            else:
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(calculations)")).fetchall()]
+                if "affects_total" not in cols:
+                    conn.execute(text("ALTER TABLE calculations ADD COLUMN affects_total BOOLEAN DEFAULT 1"))
+                conn.execute(text("UPDATE calculations SET affects_total = 1 WHERE affects_total IS NULL"))
+                if "history_import_key" not in cols:
+                    conn.execute(text("ALTER TABLE calculations ADD COLUMN history_import_key VARCHAR(64)"))
+                if "user_name_snapshot" not in cols:
+                    conn.execute(text("ALTER TABLE calculations ADD COLUMN user_name_snapshot VARCHAR(80)"))
+                if "rate_name_snapshot" not in cols:
+                    conn.execute(text("ALTER TABLE calculations ADD COLUMN rate_name_snapshot VARCHAR(120)"))
+                if "rate_value_snapshot" not in cols:
+                    conn.execute(text("ALTER TABLE calculations ADD COLUMN rate_value_snapshot NUMERIC(18,8)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_calculations_history_import_key ON calculations(history_import_key)"))
+    except Exception:
+        pass
+
+ensure_history_merge_columns()
 
 def seed():
     db = SessionLocal()
@@ -658,7 +699,11 @@ async def calculate(request: Request, agent_id: int = Form(...), game_id: int = 
                        formula_no=formula_no, input_number=n, formula_result=formula_result, result=result_decimal,
                        agent_name_snapshot=agent.name,
                        game_name_snapshot=game.name,
-                       formula_snapshot=f"{n}×{factor}×{multiplier}÷{rate.value}"))
+                       formula_snapshot=f"{n}×{factor}×{multiplier}÷{rate.value}",
+                       affects_total=True,
+                       user_name_snapshot=user.username,
+                       rate_name_snapshot=rate.name,
+                       rate_value_snapshot=Decimal(rate.value)))
     db.commit()
     db.refresh(agent)
     await ws_manager.broadcast("calculation_updated")
@@ -671,8 +716,9 @@ async def delete_calculation(calc_id: int, request: Request, db: Session = Depen
     if not c:
         raise HTTPException(404, "计算记录不存在")
     agent = db.get(Agent, c.agent_id)
-    if agent:
-        # 原子扣回该计算结果；与其他设备同时新增计算也不会发生覆盖。
+    # 只有正常在线计算才影响当前代理余额。
+    # “历史合并导入”的记录 affects_total=False，只用于补历史，删除它也绝不能扣当前金额。
+    if agent and bool(c.affects_total):
         db.execute(
             update(Agent)
             .where(Agent.id == c.agent_id)
@@ -700,9 +746,10 @@ def history(request: Request, db: Session = Depends(db_dep), day: Optional[str] 
     rows = db.execute(q).all()
     fixed = {1:"0.94×0.5", 2:"0.94×0.55", 3:"0.94×0.45"}
     return [{"id": c.id, "time": beijing_time(c.created_at).strftime("%Y-%m-%d %H:%M:%S"), "agent_id": c.agent_id,
-             "agent": c.agent_name_snapshot or an or "", "game": c.game_name_snapshot or gn or "", "rate": rn or "", "formula": c.formula_snapshot or f"公式{c.formula_no}", "input": float(c.input_number),
-             "formula_result": float(c.formula_result), "result": float(c.result), "user": un,
-             "expression": c.formula_snapshot or f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(rv):g}", "cleared": bool(c.cleared)}
+             "agent": c.agent_name_snapshot or an or "", "game": c.game_name_snapshot or gn or "", "rate": c.rate_name_snapshot or rn or "", "formula": c.formula_snapshot or f"公式{c.formula_no}", "input": float(c.input_number),
+             "formula_result": float(c.formula_result), "result": float(c.result), "user": c.user_name_snapshot or un or "",
+             "expression": c.formula_snapshot or f"{Decimal(c.input_number):g}×{fixed.get(c.formula_no, '')}÷{Decimal(c.rate_value_snapshot if c.rate_value_snapshot is not None else rv):g}", "cleared": bool(c.cleared),
+             "affects_total": bool(c.affects_total)}
             for c, an, gn, rn, rv, un in rows]
 
 @app.delete("/api/history/clear")
@@ -725,23 +772,21 @@ def _backup_value(value):
     return value
 
 def _dump_model_rows(db: Session, model):
-    """仅导出当前有效数据：排除软删除记录、已清零历史及依赖已删除对象的历史。"""
+    """导出当前有效数据。
+
+    规则：
+    - agents / games / rates：排除 is_deleted=true 的已删除对象；
+    - calculations / manual_adjustments：只排除 cleared=true 的已清零历史；
+    - 历史记录本身未清零时，不因关联对象后来被删除而丢弃。
+
+    这样“删除游戏/汇率/代理”只影响当前可选对象，不会把仍有效的历史备份一起过滤掉。
+    """
     columns = [column.name for column in model.__table__.columns]
     stmt = select(model)
     if hasattr(model, "is_deleted"):
         stmt = stmt.where(model.is_deleted.is_(False))
     if hasattr(model, "cleared"):
         stmt = stmt.where(model.cleared.is_(False))
-    if model is Calculation:
-        stmt = (stmt
-                .join(Agent, Calculation.agent_id == Agent.id)
-                .join(Game, Calculation.game_id == Game.id)
-                .join(Rate, Calculation.rate_id == Rate.id)
-                .where(Agent.is_deleted.is_(False), Game.is_deleted.is_(False), Rate.is_deleted.is_(False)))
-    elif model is ManualAdjustment:
-        stmt = (stmt
-                .join(Agent, ManualAdjustment.agent_id == Agent.id)
-                .where(Agent.is_deleted.is_(False)))
     rows = db.scalars(stmt.order_by(model.id.asc())).all()
     return columns, [
         {column: _backup_value(getattr(row, column)) for column in columns}
@@ -869,29 +914,72 @@ def _validate_backup_bytes(raw: bytes):
     if not any(str(row.get("role", "")) == "admin" for row in data["users"]):
         _backup_error("备份中没有管理员账号，恢复后将无法管理系统")
 
-    # 外键完整性：当前数据备份必须能独立恢复，不能引用已删除而未导出的父记录。
-    for row in data["calculations"]:
-        refs = [
-            ("user_id", "users"),
-            ("agent_id", "agents"),
-            ("game_id", "games"),
-            ("rate_id", "rates"),
-        ]
-        for field, parent in refs:
-            try:
-                ref_id = int(row.get(field))
-            except (TypeError, ValueError):
-                _backup_error(f"calculations.{field} 无效")
-            if ref_id not in id_sets[parent]:
-                _backup_error(f"备份存在无法恢复的关联：calculations.{field}={ref_id} 不在 {parent} 中")
-    for row in data["manual_adjustments"]:
-        for field, parent in [("user_id", "users"), ("agent_id", "agents")]:
-            try:
-                ref_id = int(row.get(field))
-            except (TypeError, ValueError):
-                _backup_error(f"manual_adjustments.{field} 无效")
-            if ref_id not in id_sets[parent]:
-                _backup_error(f"备份存在无法恢复的关联：manual_adjustments.{field}={ref_id} 不在 {parent} 中")
+    # 历史记录允许引用后来已删除的代理 / 游戏 / 汇率。
+    # 备份本身仍然不导出这些已删除对象；恢复时只生成隐藏占位行来满足 FK，
+    # 占位行 is_deleted=true，因此不会重新出现在当前代理/游戏/汇率列表中。
+    active_names = {
+        "agents": {str(row.get("name") or "") for row in normalized["agents"]},
+        "games": {str(row.get("name") or "") for row in normalized["games"]},
+    }
+
+    def _hidden_unique_name(prefix: str, row_id: int, table_name: str) -> str:
+        candidate = f"__{prefix}_{row_id}__"
+        while candidate in active_names[table_name]:
+            candidate = "_" + candidate
+        active_names[table_name].add(candidate)
+        return candidate
+
+    def _ensure_hidden_parent(parent: str, ref_id: int):
+        if ref_id in id_sets[parent]:
+            return
+        if parent == "agents":
+            normalized[parent].append({
+                "id": ref_id,
+                "name": _hidden_unique_name("history_deleted_agent", ref_id, "agents"),
+                "total": Decimal("0"),
+                "manual_adjust": Decimal("0"),
+                "note": "",
+                "is_deleted": True,
+                "sort_order": ref_id,
+                "updated_at": None,
+            })
+        elif parent == "games":
+            normalized[parent].append({
+                "id": ref_id,
+                "is_deleted": True,
+                "name": _hidden_unique_name("history_deleted_game", ref_id, "games"),
+                "factor": Decimal("0.94"),
+                "formula1": Decimal("0.50"),
+                "formula2": Decimal("0.55"),
+                "formula3": Decimal("0.45"),
+                "formula_choice": 1,
+            })
+        elif parent == "rates":
+            # Rate.name 没有唯一约束。留空可避免恢复后历史页面显示内部占位名称；
+            # 历史计算表达式优先使用 Calculation.formula_snapshot。
+            normalized[parent].append({
+                "id": ref_id,
+                "is_deleted": True,
+                "name": "",
+                "value": Decimal("1"),
+            })
+        else:
+            _backup_error(f"备份存在无法恢复的关联：{parent}.id={ref_id}")
+        id_sets[parent].add(ref_id)
+
+    for row in normalized["calculations"]:
+        user_id = int(row.get("user_id"))
+        if user_id not in id_sets["users"]:
+            _backup_error(f"备份存在无法恢复的关联：calculations.user_id={user_id} 不在 users 中")
+        _ensure_hidden_parent("agents", int(row.get("agent_id")))
+        _ensure_hidden_parent("games", int(row.get("game_id")))
+        _ensure_hidden_parent("rates", int(row.get("rate_id")))
+
+    for row in normalized["manual_adjustments"]:
+        user_id = int(row.get("user_id"))
+        if user_id not in id_sets["users"]:
+            _backup_error(f"备份存在无法恢复的关联：manual_adjustments.user_id={user_id} 不在 users 中")
+        _ensure_hidden_parent("agents", int(row.get("agent_id")))
 
     return manifest, normalized, counts
 
@@ -986,6 +1074,385 @@ async def import_restore(
     await ws_manager.broadcast("database_restored")
     return {"ok": True, "counts": counts, "message": "数据恢复完成，请重新登录"}
 
+@app.get("/api/export/history.csv")
+def export_history_csv(
+    request: Request,
+    db: Session = Depends(db_dep),
+    day: Optional[str] = None,
+    agent_id: Optional[int] = None,
+):
+    """导出历史计算数据表（CSV）。
+
+    只导出 calculations 表中 cleared=false 的有效历史；不会因为关联代理、游戏或汇率
+    后来被软删除而排除该历史。day / agent_id 与历史页面筛选保持一致。
+    """
+    require_user(request, db)
+
+    stmt = (
+        select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username)
+        .outerjoin(Agent, Calculation.agent_id == Agent.id)
+        .outerjoin(Game, Calculation.game_id == Game.id)
+        .outerjoin(Rate, Calculation.rate_id == Rate.id)
+        .outerjoin(User, Calculation.user_id == User.id)
+        .where(Calculation.cleared.is_(False))
+    )
+
+    export_day = None
+    if day:
+        try:
+            export_day = date.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(400, "日期格式错误")
+        stmt = stmt.where(
+            Calculation.created_at >= datetime.combine(export_day, datetime.min.time()),
+            Calculation.created_at < datetime.combine(export_day, datetime.max.time()),
+        )
+
+    if agent_id is not None:
+        stmt = stmt.where(Calculation.agent_id == agent_id)
+
+    rows = db.execute(stmt.order_by(Calculation.created_at.asc(), Calculation.id.asc())).all()
+
+    sio = io.StringIO(newline="")
+    fieldnames = [
+        "记录ID", "时间", "代理", "游戏", "汇率", "汇率值", "公式编号",
+        "输入值", "公式结果", "最终结果", "实际计算式", "用户",
+    ]
+    writer = csv.DictWriter(sio, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for calc, agent_name, game_name, rate_name, rate_value, username in rows:
+        writer.writerow({
+            "记录ID": calc.id,
+            "时间": beijing_time(calc.created_at).strftime("%Y-%m-%d %H:%M:%S") if calc.created_at else "",
+            "代理": calc.agent_name_snapshot or agent_name or "",
+            "游戏": calc.game_name_snapshot or game_name or "",
+            "汇率": calc.rate_name_snapshot or rate_name or "",
+            "汇率值": "" if (calc.rate_value_snapshot is None and rate_value is None) else format(Decimal(calc.rate_value_snapshot if calc.rate_value_snapshot is not None else rate_value), "f"),
+            "公式编号": calc.formula_no,
+            "输入值": format(Decimal(calc.input_number), "f"),
+            "公式结果": format(Decimal(calc.formula_result), "f"),
+            "最终结果": format(Decimal(calc.result), "f"),
+            "实际计算式": calc.formula_snapshot or "",
+            "用户": calc.user_name_snapshot or username or "",
+        })
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    suffix = export_day.isoformat() if export_day else now.strftime("%Y%m%d_%H%M%S")
+    filename = f"历史记录_{suffix}.csv"
+    payload = "\ufeff" + sio.getvalue()
+    return Response(
+        content=payload.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+HISTORY_CSV_HEADERS = [
+    "记录ID", "时间", "代理", "游戏", "汇率", "汇率值", "公式编号",
+    "输入值", "公式结果", "最终结果", "实际计算式", "用户",
+]
+HISTORY_IMPORT_MAX_BYTES = int(os.getenv("HISTORY_IMPORT_MAX_MB", "50")) * 1024 * 1024
+HISTORY_IMPORT_MAX_ROWS = int(os.getenv("HISTORY_IMPORT_MAX_ROWS", "300000"))
+
+
+def _history_import_error(message: str, status_code: int = 400):
+    raise HTTPException(status_code=status_code, detail=message)
+
+
+def _history_decimal(value, label: str, row_no: int, allow_blank: bool = False):
+    text_value = str(value or "").strip()
+    if allow_blank and not text_value:
+        return None
+    try:
+        return Decimal(text_value)
+    except Exception:
+        _history_import_error(f"第 {row_no} 行“{label}”不是有效数字")
+
+
+def _history_content_signature(row: dict) -> str:
+    """不含来源记录ID；仅用于判断“同 ID 是否本来就是同一条记录”。"""
+    parts = [
+        row["created_at"].isoformat(timespec="seconds"), row["agent_name"], row["game_name"],
+        row["rate_name"], "" if row["rate_value"] is None else format(row["rate_value"], "f"),
+        str(row["formula_no"]), format(row["input_number"], "f"),
+        format(row["formula_result"], "f"), format(row["result"], "f"),
+        row["formula_snapshot"], row["username"],
+    ]
+    return "\x1f".join(parts)
+
+
+def _parse_history_csv_bytes(raw: bytes):
+    if not raw:
+        _history_import_error("历史 CSV 文件为空")
+    if len(raw) > HISTORY_IMPORT_MAX_BYTES:
+        _history_import_error(f"历史 CSV 超过上传上限 {HISTORY_IMPORT_MAX_BYTES // 1024 // 1024} MB", 413)
+    try:
+        text_payload = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _history_import_error("历史 CSV 编码不正确，请使用本系统“导出历史表”生成的 CSV")
+
+    reader = csv.DictReader(io.StringIO(text_payload, newline=""))
+    if reader.fieldnames != HISTORY_CSV_HEADERS:
+        _history_import_error("CSV 表头不匹配，请使用本系统“导出历史表”生成的文件")
+
+    rows = []
+    seen_source_rows = set()
+    for row_no, raw_row in enumerate(reader, start=2):
+        if len(rows) >= HISTORY_IMPORT_MAX_ROWS:
+            _history_import_error(f"历史记录超过单次导入上限 {HISTORY_IMPORT_MAX_ROWS} 条", 413)
+        if not any(str(v or "").strip() for v in raw_row.values()):
+            continue
+        try:
+            source_id = int(str(raw_row.get("记录ID") or "").strip())
+            if source_id <= 0:
+                raise ValueError
+        except ValueError:
+            _history_import_error(f"第 {row_no} 行“记录ID”无效")
+
+        time_text = str(raw_row.get("时间") or "").strip()
+        try:
+            local_dt = datetime.strptime(time_text, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            created_at = local_dt.astimezone(timezone.utc).replace(tzinfo=None)
+        except ValueError:
+            _history_import_error(f"第 {row_no} 行“时间”格式无效，应为 YYYY-MM-DD HH:MM:SS")
+
+        try:
+            formula_no = int(str(raw_row.get("公式编号") or "").strip())
+        except ValueError:
+            _history_import_error(f"第 {row_no} 行“公式编号”无效")
+        if formula_no not in (1, 2, 3):
+            _history_import_error(f"第 {row_no} 行“公式编号”必须是 1、2 或 3")
+
+        agent_name = str(raw_row.get("代理") or "").strip()
+        game_name = str(raw_row.get("游戏") or "").strip()
+        if not agent_name:
+            _history_import_error(f"第 {row_no} 行“代理”不能为空")
+        if not game_name:
+            _history_import_error(f"第 {row_no} 行“游戏”不能为空")
+
+        normalized = {
+            "source_id": source_id,
+            "created_at": created_at,
+            "agent_name": agent_name,
+            "game_name": game_name,
+            "rate_name": str(raw_row.get("汇率") or "").strip(),
+            "rate_value": _history_decimal(raw_row.get("汇率值"), "汇率值", row_no, allow_blank=True),
+            "formula_no": formula_no,
+            "input_number": _history_decimal(raw_row.get("输入值"), "输入值", row_no),
+            "formula_result": _history_decimal(raw_row.get("公式结果"), "公式结果", row_no),
+            "result": _history_decimal(raw_row.get("最终结果"), "最终结果", row_no),
+            "formula_snapshot": str(raw_row.get("实际计算式") or "").strip(),
+            "username": str(raw_row.get("用户") or "").strip(),
+        }
+        normalized["content_signature"] = _history_content_signature(normalized)
+        key_material = f'{source_id}\x1e{normalized["content_signature"]}'.encode("utf-8")
+        normalized["import_key"] = hashlib.sha256(key_material).hexdigest()
+        if normalized["import_key"] in seen_source_rows:
+            _history_import_error(f"CSV 内存在完全重复记录：第 {row_no} 行")
+        seen_source_rows.add(normalized["import_key"])
+        rows.append(normalized)
+
+    if not rows:
+        _history_import_error("CSV 中没有可导入的历史记录")
+    return rows
+
+
+def _chunked(values, size=800):
+    seq = list(values)
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def _existing_history_signatures(db: Session, source_ids):
+    result = {}
+    for ids in _chunked(source_ids):
+        stmt = (
+            select(Calculation, Agent.name, Game.name, Rate.name, Rate.value, User.username)
+            .outerjoin(Agent, Calculation.agent_id == Agent.id)
+            .outerjoin(Game, Calculation.game_id == Game.id)
+            .outerjoin(Rate, Calculation.rate_id == Rate.id)
+            .outerjoin(User, Calculation.user_id == User.id)
+            .where(Calculation.id.in_(ids))
+        )
+        for calc, agent_name, game_name, rate_name, rate_value, username in db.execute(stmt).all():
+            row = {
+                "created_at": calc.created_at,
+                "agent_name": calc.agent_name_snapshot or agent_name or "",
+                "game_name": calc.game_name_snapshot or game_name or "",
+                "rate_name": calc.rate_name_snapshot or rate_name or "",
+                "rate_value": calc.rate_value_snapshot if calc.rate_value_snapshot is not None else rate_value,
+                "formula_no": int(calc.formula_no),
+                "input_number": Decimal(calc.input_number),
+                "formula_result": Decimal(calc.formula_result),
+                "result": Decimal(calc.result),
+                "formula_snapshot": calc.formula_snapshot or "",
+                "username": calc.user_name_snapshot or username or "",
+            }
+            result[int(calc.id)] = _history_content_signature(row)
+    return result
+
+
+def _history_merge_plan(db: Session, rows):
+    import_keys = [r["import_key"] for r in rows]
+    existing_keys = set()
+    for keys in _chunked(import_keys):
+        existing_keys.update(db.scalars(select(Calculation.history_import_key).where(Calculation.history_import_key.in_(keys))).all())
+    existing_by_id = _existing_history_signatures(db, [r["source_id"] for r in rows])
+
+    to_import = []
+    duplicate_count = 0
+    id_conflict_count = 0
+    for row in rows:
+        if row["import_key"] in existing_keys:
+            duplicate_count += 1
+            continue
+        existing_signature = existing_by_id.get(row["source_id"])
+        if existing_signature is not None and existing_signature == row["content_signature"]:
+            duplicate_count += 1
+            continue
+        if existing_signature is not None:
+            id_conflict_count += 1
+        to_import.append(row)
+    return to_import, duplicate_count, id_conflict_count
+
+
+def _history_hidden_name(kind: str, display_name: str) -> str:
+    digest = hashlib.sha256(display_name.encode("utf-8")).hexdigest()[:20]
+    return f"__history_import_{kind}_{digest}__"
+
+
+def _get_or_create_history_agent(db: Session, display_name: str, cache: dict):
+    if display_name in cache:
+        return cache[display_name]
+    row = db.scalar(select(Agent).where(Agent.name == display_name))
+    if not row:
+        internal_name = _history_hidden_name("agent", display_name)
+        row = db.scalar(select(Agent).where(Agent.name == internal_name))
+        if not row:
+            row = Agent(name=internal_name, total=Decimal("0"), manual_adjust=Decimal("0"), note="", is_deleted=True)
+            db.add(row); db.flush()
+    cache[display_name] = row
+    return row
+
+
+def _get_or_create_history_game(db: Session, display_name: str, formula_no: int, cache: dict):
+    cache_key = (display_name, formula_no)
+    if cache_key in cache:
+        return cache[cache_key]
+    row = db.scalar(select(Game).where(Game.name == display_name))
+    if not row:
+        internal_name = _history_hidden_name("game", display_name)
+        row = db.scalar(select(Game).where(Game.name == internal_name))
+        if not row:
+            row = Game(name=internal_name, is_deleted=True, factor=Decimal("0.94"), formula1=Decimal("0.50"),
+                       formula2=Decimal("0.55"), formula3=Decimal("0.45"), formula_choice=formula_no)
+            db.add(row); db.flush()
+    cache[cache_key] = row
+    return row
+
+
+def _get_or_create_history_rate(db: Session, display_name: str, value, cache: dict):
+    numeric_value = Decimal(value) if value is not None else Decimal("1")
+    cache_key = (display_name, format(numeric_value, "f"))
+    if cache_key in cache:
+        return cache[cache_key]
+    row = db.scalar(select(Rate).where(Rate.name == display_name, Rate.value == numeric_value).order_by(Rate.is_deleted.asc(), Rate.id.asc()))
+    if not row:
+        row = Rate(name=display_name, value=numeric_value, is_deleted=True)
+        db.add(row); db.flush()
+    cache[cache_key] = row
+    return row
+
+
+@app.post("/api/history/import/preview")
+async def preview_history_merge(
+    request: Request,
+    history_file: UploadFile = File(...),
+    db: Session = Depends(db_dep),
+):
+    require_admin(request, db)
+    filename = (history_file.filename or "").strip()
+    if not filename.lower().endswith(".csv"):
+        _history_import_error("请选择本系统“导出历史表”生成的 CSV 文件")
+    raw = await history_file.read(HISTORY_IMPORT_MAX_BYTES + 1)
+    rows = _parse_history_csv_bytes(raw)
+    to_import, duplicate_count, id_conflict_count = _history_merge_plan(db, rows)
+    return {
+        "ok": True,
+        "filename": filename,
+        "size_bytes": len(raw),
+        "total_rows": len(rows),
+        "duplicate_rows": duplicate_count,
+        "new_rows": len(to_import),
+        "id_conflicts": id_conflict_count,
+        "message": "仅合并历史记录；不会删除现有数据，也不会修改当前代理金额。",
+    }
+
+
+@app.post("/api/history/import/merge")
+async def merge_history_csv(
+    request: Request,
+    history_file: UploadFile = File(...),
+    confirm: str = Form(...),
+    db: Session = Depends(db_dep),
+):
+    admin = require_admin(request, db)
+    if confirm != "MERGE_HISTORY_ONLY":
+        _history_import_error("缺少合并确认，未执行导入")
+    filename = (history_file.filename or "").strip()
+    if not filename.lower().endswith(".csv"):
+        _history_import_error("请选择本系统“导出历史表”生成的 CSV 文件")
+    raw = await history_file.read(HISTORY_IMPORT_MAX_BYTES + 1)
+    rows = _parse_history_csv_bytes(raw)
+    # 释放鉴权查询产生的读事务，随后用独立事务完成整批合并。
+    db.rollback()
+
+    imported_count = 0
+    skipped_count = 0
+    conflict_count = 0
+    try:
+        with SessionLocal() as import_db:
+            with import_db.begin():
+                if engine.dialect.name == "postgresql":
+                    import_db.execute(text("SELECT pg_advisory_xact_lock(8675309002)"))
+                to_import, skipped_count, conflict_count = _history_merge_plan(import_db, rows)
+                current_admin = import_db.get(User, admin.id)
+                if not current_admin:
+                    current_admin = import_db.scalar(select(User).where(User.role == "admin").order_by(User.id.asc()))
+                if not current_admin:
+                    _history_import_error("当前数据库没有可用于关联历史记录的管理员账号")
+
+                user_cache = {u.username: u for u in import_db.scalars(select(User)).all()}
+                agent_cache, game_cache, rate_cache = {}, {}, {}
+                for row in to_import:
+                    source_user = user_cache.get(row["username"]) if row["username"] else None
+                    linked_user = source_user or current_admin
+                    agent = _get_or_create_history_agent(import_db, row["agent_name"], agent_cache)
+                    game = _get_or_create_history_game(import_db, row["game_name"], row["formula_no"], game_cache)
+                    rate = _get_or_create_history_rate(import_db, row["rate_name"], row["rate_value"], rate_cache)
+                    import_db.add(Calculation(
+                        created_at=row["created_at"], user_id=linked_user.id, agent_id=agent.id, game_id=game.id, rate_id=rate.id,
+                        formula_no=row["formula_no"], input_number=row["input_number"], formula_result=row["formula_result"],
+                        result=row["result"], cleared=False, agent_name_snapshot=row["agent_name"], game_name_snapshot=row["game_name"],
+                        formula_snapshot=row["formula_snapshot"], affects_total=False, history_import_key=row["import_key"],
+                        user_name_snapshot=row["username"], rate_name_snapshot=row["rate_name"], rate_value_snapshot=row["rate_value"],
+                    ))
+                imported_count = len(to_import)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _history_import_error(f"历史合并失败，数据库已自动回滚：{type(exc).__name__}", 500)
+
+    await ws_manager.broadcast("calculation_updated")
+    return {
+        "ok": True,
+        "imported": imported_count,
+        "skipped": skipped_count,
+        "id_conflicts": conflict_count,
+        "message": f"历史合并完成：新增 {imported_count} 条，跳过重复 {skipped_count} 条。当前代理金额及其他数据未修改。",
+    }
+
+
 @app.get("/api/export/all-data")
 def export_all_data(request: Request, db: Session = Depends(db_dep)):
     """管理员导出当前有效数据库数据；兼容 Render DATABASE_URL 与自建 PostgreSQL。"""
@@ -1020,6 +1487,7 @@ def export_all_data(request: Request, db: Session = Depends(db_dep)):
         "tables": counts,
         "max_ids": max_ids,
         "format_version": 1,
+        "history_policy": "exclude_cleared_only; keep_uncleared_history_even_if_related_object_was_deleted",
     }
 
     buffer = io.BytesIO()
@@ -1033,7 +1501,9 @@ def export_all_data(request: Request, db: Session = Depends(db_dep)):
             "这是代理计算中心的当前有效数据备份。\n"
             "本文件直接从当前运行环境正在使用的 PostgreSQL 导出（兼容 Render 与自建服务器）。\n"
             "包含 users、agents、games、rates、calculations、manual_adjustments 六张表的当前有效记录。\n"
-            "不包含 is_deleted=true 的已删除数据，也不包含 cleared=true 的已清零历史数据。\n"
+            "不包含 is_deleted=true 的已删除对象，也不包含 cleared=true 的已清零历史数据。\n"
+            "未清零历史不会因为其关联的代理/游戏/汇率后来被删除而丢失。\n"
+            "恢复这类历史时，系统只生成隐藏关联占位，不会恢复或显示已删除对象。\n"
             "all_data.json 用于数据迁移/恢复；csv/ 目录方便人工查看。\n"
             "注意：users 表包含密码哈希，请将此备份视为敏感文件并妥善保管。\n"
         )

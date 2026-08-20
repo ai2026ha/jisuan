@@ -25,7 +25,7 @@
 </nav></aside>
 <main class="main">
 <section id="dashboard" class="page active">
-<div class="title"><div><h1>当前概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><div class="actionGroup"><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button><button type="button" class="primary" onclick="toggleClearMode()">清零</button><a class="primary" href="/api/export/txt">⇩ 导出TXT</a><a id="exportCurrentData" class="primary adminOnly" href="/api/export/all-data">⇩ 导出当前数据</a><button id="importCurrentData" type="button" class="primary adminOnly" onclick="chooseRestoreFile()">⇧ 上传数据</button><input id="restoreFile" type="file" accept=".zip,application/zip" hidden onchange="previewRestoreFile(this.files&&this.files[0])"></div></div>
+<div class="title"><div><h1>当前概览</h1><div class="subtitle">每个代理独立记录每一次计算，并自动累计总额</div></div><div class="actionGroup"><button class="primary" onclick="tab('calc',document.querySelectorAll('.nav button')[1])">＋ 新建计算</button><button type="button" class="primary" onclick="toggleClearMode()">清零</button><a class="primary" href="/api/export/txt">⇩ 导出TXT</a><a id="exportCurrentData" class="primary adminOnly" href="/api/export/all-data">⇩ 导出当前数据</a><button id="importCurrentData" type="button" class="primary adminOnly" onclick="chooseRestoreFile()">⇧ 覆盖恢复数据</button><input id="restoreFile" type="file" accept=".zip,application/zip" hidden onchange="previewRestoreFile(this.files&&this.files[0])"></div></div>
 <div class="stats"><div class="stat"><div class="label">代理数量</div><div class="num" id="statAgents">0</div></div><div class="stat"><div class="label">当前计算笔数</div><div class="num" id="statCalcs">0</div></div><div class="stat"><div class="label">当前累计总额</div><div class="num" id="statTotal">0</div></div></div>
 <div id="clearPanel" class="card" style="display:none;margin-bottom:15px">
 <div id="clearSummary" class="notice"></div>
@@ -71,7 +71,18 @@
 <div class="card"><div class="row"><div class="field"><label>汇率名称</label><input id="newRateName" placeholder="例如 人民币汇率"></div><div class="field"><label>汇率数值</label><input id="newRateValue" type="number" step="1" min="1" placeholder="例如 7"></div><button class="primary" onclick="addRate()">新增汇率</button></div><div id="rateTable"></div></div></section>
 
 <section id="history" class="page"><div class="title"><div><h1>历史计算</h1><div class="subtitle">每笔记录保留代理、游戏、实际计算式和结果</div></div></div>
-<div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button class="primary" onclick="clearHistory()">清除历史</button><button class="primary" onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div id="historyTable"></div></div></section>
+<div class="card"><div class="toolbar"><div><label>日期</label><input id="historyDay" type="date"></div><div><label>代理</label><select id="historyAgent"></select></div><button class="primary" onclick="loadHistory()">查询</button><button class="primary" onclick="exportHistoryTable()">导出历史表</button><button class="primary adminOnly" onclick="chooseHistoryMergeFile()">合并导入历史</button><input id="historyMergeFile" type="file" accept=".csv,text/csv" hidden onchange="previewHistoryMerge(this.files&&this.files[0])"><button class="primary" onclick="clearHistory()">清除历史</button><button class="primary" onclick="location.href='/api/export/txt'">导出今日 TXT</button></div><div class="notice">“合并导入历史”只补历史记录：不会删除今天新增的数据，不会覆盖账号/代理/游戏/汇率，也不会修改当前代理金额。</div><div id="historyTable"></div></div>
+<div id="historyMergeOverlay" class="restoreOverlay" onclick="if(event.target===this)closeHistoryMergeModal()">
+  <div class="restoreModal">
+    <h3>合并导入历史 · 预览</h3>
+    <div class="subtitle">只接受本系统“导出历史表”生成的 CSV。重复记录会自动跳过。</div>
+    <div id="historyMergeMeta" class="restoreMeta"></div>
+    <div id="historyMergeCounts" class="restoreCounts"></div>
+    <div class="notice"><b>安全规则：</b>只新增缺失历史，不删除任何现有记录，不修改当前代理金额。即使以后删除这些补回的旧历史，也不会反向扣除当前余额。</div>
+    <div id="historyMergeMsg"></div>
+    <div class="restoreActions"><button type="button" onclick="closeHistoryMergeModal()">取消</button><button id="historyMergeConfirmBtn" type="button" class="primary" onclick="confirmHistoryMerge()">确认合并历史</button></div>
+  </div>
+</div></section>
 </main></div>
 <script>
 let data={agents:[],games:[],rates:[]},historyRows=[],allHistoryRows=[],activeHistoryRows=[],manualAdjustmentRows=[];
@@ -81,6 +92,56 @@ function fmtNum(v){let n=Number(v); if(!Number.isFinite(n)) return String(v); re
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(url,opt={}){let r=await fetch(url,opt),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={detail:t}}if(!r.ok){let msg=d.detail || d.message || JSON.stringify(d); throw Error(typeof msg==='string'?msg:JSON.stringify(msg));}return d}
 let restoreSelectedFile=null;
+let historyMergeSelectedFile=null;
+function chooseHistoryMergeFile(){
+ if(!(data.current_user&&data.current_user.role==='admin'))return alert('仅管理员可合并导入历史');
+ $('historyMergeFile').value='';
+ $('historyMergeFile').click();
+}
+function closeHistoryMergeModal(){
+ if(window.__historyMergeSubmitting)return;
+ $('historyMergeOverlay').classList.remove('show');
+ historyMergeSelectedFile=null;
+ $('historyMergeMsg').innerHTML='';
+}
+async function previewHistoryMerge(file){
+ if(!file)return;
+ historyMergeSelectedFile=file;
+ const fd=new FormData();fd.append('history_file',file);
+ try{
+  const d=await api('/api/history/import/preview',{method:'POST',body:fd});
+  $('historyMergeMeta').innerHTML=`<div><b>文件：</b>${esc(d.filename||file.name)}</div><div><b>大小：</b>${formatBytes(d.size_bytes)}</div><div><b>处理方式：</b>只合并历史，不覆盖现有数据</div>`;
+  $('historyMergeCounts').innerHTML=`<div class="restoreCount">CSV 总记录<b>${Number(d.total_rows||0)}</b></div><div class="restoreCount">将新增<b>${Number(d.new_rows||0)}</b></div><div class="restoreCount">重复跳过<b>${Number(d.duplicate_rows||0)}</b></div><div class="restoreCount">ID 冲突转新记录<b>${Number(d.id_conflicts||0)}</b></div>`;
+  $('historyMergeMsg').innerHTML='';
+  $('historyMergeConfirmBtn').disabled=false;
+  $('historyMergeOverlay').classList.add('show');
+ }catch(e){
+  historyMergeSelectedFile=null;
+  alert('历史 CSV 校验失败：'+e.message);
+ }
+}
+async function confirmHistoryMerge(){
+ if(!historyMergeSelectedFile)return alert('请重新选择历史 CSV');
+ if(window.__historyMergeSubmitting)return;
+ window.__historyMergeSubmitting=true;
+ $('historyMergeConfirmBtn').disabled=true;
+ $('historyMergeMsg').innerHTML='<div class="notice">正在合并历史记录，请不要重复提交。</div>';
+ const fd=new FormData();fd.append('history_file',historyMergeSelectedFile);fd.append('confirm','MERGE_HISTORY_ONLY');
+ try{
+  const d=await api('/api/history/import/merge',{method:'POST',body:fd});
+  $('historyMergeMsg').innerHTML='<div class="notice">'+esc(d.message||'历史合并完成')+'</div>';
+  window.__historyMergeSubmitting=false;
+  $('historyMergeConfirmBtn').disabled=false;
+  await loadHistory();
+  await load();
+  alert(d.message||'历史合并完成');
+  closeHistoryMergeModal();
+ }catch(e){
+  window.__historyMergeSubmitting=false;
+  $('historyMergeConfirmBtn').disabled=false;
+  $('historyMergeMsg').innerHTML='<div class="notice dangerText">合并失败：'+esc(e.message)+'</div>';
+ }
+}
 function chooseRestoreFile(){
  if(!(data.current_user&&data.current_user.role==='admin'))return alert('仅管理员可恢复数据');
  $('restoreFile').value='';
@@ -176,7 +237,7 @@ async function executeClear(){
 function renderDashboard(){
  $('statAgents').textContent=data.agents.length;
  $('statTotal').textContent=fmtNum(data.agents.reduce((s,a)=>s+a.total,0));
- Promise.all([api('/api/history'),api('/api/manual-adjustments')]).then(([rows,manualRows])=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared); manualAdjustmentRows=manualRows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=activeHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
+ Promise.all([api('/api/history'),api('/api/manual-adjustments')]).then(([rows,manualRows])=>{allHistoryRows=rows; activeHistoryRows=rows.filter(x=>!x.cleared && x.affects_total!==false); manualAdjustmentRows=manualRows.filter(x=>!x.cleared); historyRows=activeHistoryRows; $('statCalcs').textContent=activeHistoryRows.length; renderDashboardAgents();renderSelectedAgent()})
 }
 function editAgentNote(id,current){
  let n=prompt("请输入备注：", current||"");
@@ -345,6 +406,14 @@ async function clearHistory(){
     }catch(e){
         alert(e.message);
     }
+}
+function exportHistoryTable(){
+ let qs=[];
+ const day=$('historyDay').value;
+ const aid=$('historyAgent').value;
+ if(day)qs.push('day='+encodeURIComponent(day));
+ if(aid)qs.push('agent_id='+encodeURIComponent(aid));
+ location.href='/api/export/history.csv'+(qs.length?'?'+qs.join('&'):'');
 }
 async function loadHistory(){try{let qs=[];if($('historyDay').value)qs.push('day='+$('historyDay').value);let rows=await api('/api/history'+(qs.length?'?'+qs.join('&'):''));allHistoryRows=rows; let aid=$('historyAgent').value;if(aid)rows=rows.filter(x=>x.agent_id==aid);$('historyTable').innerHTML='<table><thead><tr><th>时间</th><th>代理</th><th>游戏</th><th>计算式</th><th>结果</th><th>用户</th><th>操作</th></tr></thead><tbody>'+rows.map(x=>`<tr><td>${x.time}</td><td>${esc(x.agent)}</td><td>${esc(x.game)}</td><td>${esc(fmtExpression(x.expression))}</td><td><b>${fmtNum(x.result)}</b></td><td>${esc(x.user)}</td><td><button class="danger" onclick="deleteCalculation(${x.id})">删除</button></td></tr>`).join('')+'</tbody></table>'+(rows.length?'':'<p class="empty">暂无记录</p>')}catch(e){alert(e.message)}}
 load();
